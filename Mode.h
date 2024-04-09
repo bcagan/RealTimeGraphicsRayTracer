@@ -4,6 +4,7 @@
 #include "VulkanSystem.h"
 #include "chrono"
 #include "Events.h"
+#include "RTSystem.h"
 struct MoveStatus {
 	bool up = false;
 	bool down = false;
@@ -43,6 +44,7 @@ public:
 	HeadlessEvents events;
 private:
 	VulkanSystem vulkanSystem;
+	RTSystem rtSystem;
 	void mainLoop(SceneGraph* graph);
 	MoveStatus moveStatus;
 	std::chrono::high_resolution_clock::time_point lastFrame;

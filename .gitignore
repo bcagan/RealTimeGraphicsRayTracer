@@ -55,3 +55,6 @@ cube/.vs/cube/v17/.suo
 *.thmx
 *.mp4
 
+*.command
+*.json
+*.ifc

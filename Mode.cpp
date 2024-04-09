@@ -4,6 +4,8 @@
 #include "VulkanSystem.h"
 #include "Parser.h"
 #include "Events.h"
+#include "RTSystem.h"
+#include "SystemCommon.h"
 
 //Handle each distinct type of window event
 //Track delta over a frame, and change in x and y over a frame, and act on that
@@ -44,13 +46,13 @@ void Mode::handleButtonEvent(ButtonEvent event) {
 	}
 	//Change camera mode
 	if (event.button == KEY_0 && event.pressed) {
-		vulkanSystem.movementMode = MOVE_DEBUG;
+		vulkanSystem.movementMode = MovementMode::MOVE_DEBUG;
 	}
 	if (event.button == KEY_1 && event.pressed) {
-		vulkanSystem.movementMode = MOVE_USER;
+		vulkanSystem.movementMode = MovementMode::MOVE_USER;
 	}
 	if (event.button == KEY_2 && event.pressed) {
-		vulkanSystem.movementMode = MOVE_STATIC;
+		vulkanSystem.movementMode = MovementMode::MOVE_STATIC;
 	}
 	//Control animation
 	if (event.button == KEY_LEFT && event.pressed) {
@@ -228,6 +230,7 @@ int Mode::modeMain() {
 	graph.useInstancing = useInstancing;
 	Texture lut = Texture::parseTexture("Textures/LUT.png", false);
 	vulkanSystem.LUT = lut;
+	rtSystem.LUT = lut;
 
 	DrawList drawList = graph.navigateSceneGraph(verbose, poolSize);
 	if (drawList.cubeMaps.size() == 0) {
@@ -237,6 +240,8 @@ int Mode::modeMain() {
 		drawList.textureMaps.push_back(defaultShadow);
 	}
 	
+
+	/*
 	//Initialize Vulkan System
 	vulkanSystem.shaderDir = shaderDir;
 	vulkanSystem.useInstancing = drawList.instancedTransformPools.size() > 0 && useInstancing;
@@ -254,7 +259,7 @@ int Mode::modeMain() {
 		std::chrono::duration_cast<std::chrono::milliseconds>(
 			initLast - initFirst).count() << "ms" << std::endl;
 	lastFrame = std::chrono::high_resolution_clock::now();
-	movementMode = MOVE_USER;
+	movementMode = MovementMode::MOVE_USER;
 	vulkanSystem.movementMode = movementMode;
 	vulkanSystem.renderToWindow = true;
 
@@ -268,6 +273,41 @@ int Mode::modeMain() {
 	mainLoop(&graph);
 
 	//Clean up vulkan
-	//vulkanSystem.cleanup();
+	//vulkanSystem.cleanup();*/
+
+
+
+	//Initialize RTSystem
+	rtSystem.shaderDir = shaderDir;
+	rtSystem.useInstancing = drawList.instancedTransformPools.size() > 0 && useInstancing;
+	rtSystem.mainWindow = mainWindow;
+	rtSystem.deviceName = deviceName;
+	rtSystem.useCulling = culling;
+	rtSystem.poolSize = poolSize;
+	rtSystem.platform = platform;
+	rtSystem.defaultShadowTex = defaultShadow;
+
+	std::chrono::high_resolution_clock::time_point initFirst = std::chrono::high_resolution_clock::now();
+	rtSystem.initVulkan(drawList, cameraName);
+	std::chrono::high_resolution_clock::time_point initLast = std::chrono::high_resolution_clock::now();
+	if (verbose) std::cout << "MEASURE init vulkan: " << (float)
+		std::chrono::duration_cast<std::chrono::milliseconds>(
+			initLast - initFirst).count() << "ms" << std::endl;
+	lastFrame = std::chrono::high_resolution_clock::now();
+	movementMode = MovementMode::MOVE_USER;
+	rtSystem.movementMode = movementMode;
+	rtSystem.renderToWindow = true;
+	/*
+	//Handle headless mode
+	if (!rtSystem.renderToWindow) {
+		events = parser.parseEvents(eventName);
+		events.vulkanSystemP = &rtSystem;
+	}
+
+	//Begin running main loop
+	mainLoop(&graph);
+
+	//Clean up vulkan
+	//rtSyste,.cleanup();*/
 	return 0;
 }
