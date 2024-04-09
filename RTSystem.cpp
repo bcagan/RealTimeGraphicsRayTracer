@@ -81,19 +81,19 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 	createAttachments();
 	createImageViews();
 
-	
-	//createRenderPasses();
+
 	createDescriptorSetLayout();
+	createDepthResources();/*
+	createRenderPasses();
 	createGraphicsPipelines();
-	createDepthResources();
 	createFramebuffers();
-	//createCommands();
+	createCommands();
 	createVertexBuffer();
 	createTextureImages();
 	createIndexBuffers();
 	createUniformBuffers();
 	createDescriptorPool();
-	createDescriptorSets();
+	createDescriptorSets();*/
 	
 
 	if (renderToWindow) {
@@ -303,15 +303,12 @@ void RTSystem::createInstance(bool verbose) {
 #ifdef PLATFORM_WIN
 
 
-	std::array<const char*, 8> requiredExtensionArray = std::array<const char*, 8>();
+	std::array<const char*, 5> requiredExtensionArray = std::array<const char*, 5>();
 	requiredExtensionArray[0] = VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME;
 	requiredExtensionArray[1] = VK_KHR_SURFACE_EXTENSION_NAME;
 	requiredExtensionArray[2] = VK_EXT_DEBUG_UTILS_EXTENSION_NAME;
 	requiredExtensionArray[3] = VK_KHR_WIN32_SURFACE_EXTENSION_NAME;
 	requiredExtensionArray[4] = VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME;
-	requiredExtensionArray[5] = VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME;
-	requiredExtensionArray[6] = VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME;
-	requiredExtensionArray[7] = VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME;
 	instanceCreateInfo.enabledExtensionCount = requiredExtensionArray.size();
 	instanceCreateInfo.ppEnabledExtensionNames = requiredExtensionArray.data();
 #endif // PLATFORM_WIN
