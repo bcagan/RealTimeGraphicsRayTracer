@@ -1179,6 +1179,16 @@ template<typename T> struct mat44 {
 		}
 	}
 
+	VkTransformMatrixKHR toVulkan() {
+		VkTransformMatrixKHR vulkanTransform;
+		for (int col = 0; col < 4; col++) {
+			for (int row = 0; row < 3; row++) {
+				vulkanTransform.matrix[row][col] = data[col][row];
+			}
+		}
+		return vulkanTransform;
+	}
+
 };
 
 //Interface based on glm::quaternion but implementation entirely original unless noted otherwise

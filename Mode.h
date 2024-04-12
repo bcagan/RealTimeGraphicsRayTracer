@@ -31,6 +31,7 @@ public:
 
 	//Pre run time user input
 	bool useInstancing = false;
+	bool useRT = false;
 	bool verbose = false;
 	bool culling = true;
 	int poolSize = MAX_POOL;

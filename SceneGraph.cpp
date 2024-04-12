@@ -100,6 +100,7 @@ void SceneGraph::recurseSceneGraph(
 	std::vector<Driver>& cameraDrivers,
 	std::vector<std::vector<mat44<float>>>& instancedTransforms,
 	std::vector<std::vector<mat44<float>>>& instancedNormalTransforms,
+	std::vector<std::vector<uint32_t>> meshIndices,
 	std::vector<DrawNode>& drawNodes) {
 	//Get graph node and related transform information
 	if (node >= graphNodes.size()) {
@@ -203,7 +204,7 @@ void SceneGraph::recurseSceneGraph(
 			nodeDrivers.push_back(newDriver);
 		}
 		//Parse a stanrdard draw node
-		if (!mesh.instanceMesh || !useInstancing) {
+		if (!mesh.instanceMesh || drawType != DRAW_INSTANCED) {
 			//Create draw node
 			DrawNode draw;
 			draw.name = graphNode.name;
@@ -219,6 +220,8 @@ void SceneGraph::recurseSceneGraph(
 			if (mesh.material.has_value()) {
 				draw.material = materials[*mesh.material];
 			}
+			if(drawType == DRAW_MESH)
+				meshIndices.push_back(indices);
 
 			//Important: Vertices AND indices need to be added in THE ORDER TRAVERSED for the later pooling code to work!
 			//Load vertices and indicies into draw pools
@@ -279,6 +282,7 @@ void SceneGraph::recurseSceneGraph(
 			cameraDrivers,
 			instancedTransforms,
 			instancedNormalTransforms,
+			meshIndices,
 			drawNodes);
 	}
 }
@@ -294,6 +298,7 @@ DrawListIntermediate SceneGraph::navigateSceneGraphInt(int instanceSize) {
 	drawList.drawPool = std::vector<DrawNode>();
 	drawList.cameraDrivers = std::vector<Driver>();
 	drawList.nodeDrivers = std::vector<Driver>();
+	drawList.meshIndexPools = std::vector < std::vector<uint32_t>>();
 	drawList.instancedTransforms = std::vector < std::vector<mat44<float>>>(instanceSize);
 	drawList.instancedNormalTransforms = std::vector < std::vector<mat44<float>>>(instanceSize);
 	drawList.textureMaps = textureMaps;
@@ -315,6 +320,7 @@ DrawListIntermediate SceneGraph::navigateSceneGraphInt(int instanceSize) {
 			drawList.cameraDrivers,
 			drawList.instancedTransforms,
 			drawList.instancedNormalTransforms,
+			drawList.meshIndexPools,
 			rootList);
 		drawList.drawPool.reserve(drawList.drawPool.size() + rootList.size());
 		drawList.drawPool.insert(drawList.drawPool.end(), rootList.begin(), rootList.end());
@@ -441,11 +447,11 @@ DrawList SceneGraph::navigateSceneGraph(bool verbose, int poolSize) {
 	}
 	std::chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 	DrawList list;
-	list.useInstancing = useInstancing;
+	list.drawType = drawType;
 	std::vector<std::pair<std::string, int>> instancedMeshNamesAndIndex = std::vector<std::pair<std::string,int>>();
 	std::vector<std::pair<size_t, size_t>> meshStartsSizes = std::vector<std::pair<size_t, size_t>>();
 	//If instancing is requested, handle first and seperately
-	if (useInstancing) {
+	if (drawType == DRAW_INSTANCED) {
 		std::vector<bool> encounteredMesh = std::vector<bool>(meshes.size());
 		for (int i = 0; i < encounteredMesh.size(); i++) encounteredMesh[i] = false;
 		for (int root : roots) {
@@ -523,6 +529,35 @@ DrawList SceneGraph::navigateSceneGraph(bool verbose, int poolSize) {
 	list.worldToLights = std::vector<mat44<float>>();
 	list.lights = toDrawLights(intermediate.lights, list.worldToLights);
 	std::optional<mat44<float>> worldToEnvironment = intermediate.worldToEnvironment;
+	list.meshIndexPools = intermediate.meshIndexPools;
+
+	//For ray tracing support, create mesh specific data pools
+	if (DRAW_MESH) {
+		size_t meshNum = list.meshTransformPools.size();
+		list.meshTransformPools = intermediate.transforms;
+		list.meshNormalTransformPools = intermediate.normalTransforms;
+		list.meshEnvironmentTransformPools = 
+			std::vector<mat44<float>>(meshNum);
+		list.meshBoundingSpheres = 
+			std::vector<std::pair<vec3<float_t>, float>>(meshNum);
+		list.meshMaterials = std::vector<DrawMaterial>(meshNum);
+		for (int i = 0; i < list.meshTransformPools.size(); i++) {
+			if (worldToEnvironment.has_value()) {
+				list.meshEnvironmentTransformPools[i] =
+					*worldToEnvironment * list.meshTransformPools[i];
+			}
+			DrawNode drawNode = intermediate.drawPool[i];
+			list.meshMaterials[i] = processMaterial(drawNode.material);
+			list.meshBoundingSpheres[i] = drawNode.boundingSphere;
+			int minIndex = INT_MAX; int maxIndex = -1;
+			for (int ind = 0; ind < list.meshIndexPools[i].size(); i++) {
+				uint32_t thisIndex = list.meshIndexPools[i][ind];
+				if (thisIndex > maxIndex) maxIndex = thisIndex;
+				if (thisIndex < minIndex) minIndex = thisIndex;
+			}
+			list.meshMinMaxVerts.push_back(std::make_pair(minIndex,maxIndex));
+		}
+	}
 	
 	//Data that needs to be further parsed
 	std::vector<DrawNode> drawInter = intermediate.drawPool;

@@ -32,20 +32,15 @@
 void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 	//Vertex shader
 	vertices = drawList.vertexPool;
-	verticesInst = drawList.instancedVertexPool;
-	indexPoolsStore = drawList.indexPools;
-	indexInstPools = drawList.instancedIndexPools;
-	transformPools = drawList.transformPools;
-	transformInstPoolsStore = drawList.instancedTransformPools;
-	transformInstIndexPools = drawList.instancedTransformIndexPools;
+	meshMinMax = drawList.meshMinMaxVerts;
+	transformPoolsMesh = drawList.meshTransformPools;
+	indexPoolsMesh = drawList.meshIndexPools;
+
 
 	//Materials
-	transformNormalPools = drawList.normalTransformPools;
-	transformNormalInstPoolsStore = drawList.instancedNormalTransformPools;
-	transformEnvironmentPools = drawList.environmentTransformPools;
-	transformEnvironmentInstPoolsStore = drawList.instancedEnvironmentTransformPools;
-	materialPools = drawList.materialPools;
-	instancedMaterials = drawList.instancedMaterials;
+	transformNormalPoolsMesh = drawList.meshNormalTransformPools;
+	transformEnvironmentPoolsMesh = drawList.meshEnvironmentTransformPools;
+	meshMaterials = drawList.meshMaterials;
 	rawTextures = drawList.textureMaps;
 	rawCubes = drawList.cubeMaps;
 
@@ -57,7 +52,7 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 
 	//Animate and bounding box
 	drawPools = drawList.drawPools;
-	boundingSpheresInst = drawList.instancedBoundingSpheres;
+	boundingSpheresMesh = drawList.meshBoundingSpheres;
 	nodeDrivers = drawList.nodeDrivers;
 	cameraDrivers = drawList.cameraDrivers;
 
@@ -81,16 +76,18 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 	createAttachments();
 	createImageViews();
 
-
+	createVertexBuffer();
+	createIndexBuffers();
+	createTransformBuffers();
+	createAccelereationStructures();
+	
 	createDescriptorSetLayout();
 	createDepthResources();/*
 	createRenderPasses();
 	createGraphicsPipelines();
 	createFramebuffers();
 	createCommands();
-	createVertexBuffer();
 	createTextureImages();
-	createIndexBuffers();
 	createUniformBuffers();
 	createDescriptorPool();
 	createDescriptorSets();*/
@@ -136,30 +133,6 @@ void RTSystem::listPhysicalDevices() {
 	}
 }
 
-void RTSystem::runDrivers(float frameTime, SceneGraph* sceneGraphP, bool loop) {
-	frameTime *= playbackSpeed; //1 when not in headless mode
-	frameTime *= (playingAnimation ? (forwardAnimation ? 1 : -1) : 0);
-	bool renavigate = false;
-	for (size_t ind = 0; ind < nodeDrivers.size(); ind++) {
-		Driver* driver = nodeDrivers.data() + ind;
-		renavigate = updateTransform(driver, frameTime, sceneGraphP, loop) || renavigate;
-	}
-	for (size_t ind = 0; ind < cameraDrivers.size(); ind++) {
-		Driver* driver = cameraDrivers.data() + ind;
-		renavigate = renavigate || updateTransform(driver, frameTime, sceneGraphP, loop) || renavigate;
-	}
-	if (renavigate) {
-		DrawList drawList = sceneGraphP->navigateSceneGraph(false, poolSize);
-		transformPools = drawList.transformPools;
-		transformInstPoolsStore = drawList.instancedTransformPools;
-		transformNormalPools = drawList.normalTransformPools;
-		transformNormalInstPoolsStore = drawList.instancedNormalTransformPools;
-		transformEnvironmentPools = drawList.environmentTransformPools;
-		transformEnvironmentInstPoolsStore = drawList.instancedEnvironmentTransformPools;
-		cameras = drawList.cameras;
-	}
-}
-
 
 void RTSystem::setDriverRuntime(float time) {
 	for (size_t ind = 0; ind < cameraDrivers.size(); ind++) {
@@ -202,13 +175,8 @@ void RTSystem::cleanup() {
 	vkDestroyImageView(device, LUTImageView, nullptr);
 	vkDestroyImage(device, LUTImage, nullptr);
 	vkFreeMemory(device, LUTImageMemory, nullptr);
-	vkDestroyImageView(device, defaultShadowImageView, nullptr);
-	vkDestroyImage(device, defaultShadowImage, nullptr);
-	vkFreeMemory(device, defaultShadowImageMemory, nullptr);
-	for (int pool = 0; pool < transformPools.size(); pool++) {
+	for (int pool = 0; pool < transformPoolsMesh.size(); pool++) {
 		for (int frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
-			vkDestroyBuffer(device, uniformBuffersTransformsPools[pool][frame], nullptr);
-			vkFreeMemory(device, uniformBuffersMemoryTransformsPools[pool][frame], nullptr);
 			vkDestroyBuffer(device, uniformBuffersEnvironmentTransformsPools[pool][frame], nullptr);
 			vkFreeMemory(device, uniformBuffersMemoryEnvironmentTransformsPools[pool][frame], nullptr);
 			vkDestroyBuffer(device, uniformBuffersNormalTransformsPools[pool][frame], nullptr);
@@ -224,30 +192,12 @@ void RTSystem::cleanup() {
 		}
 	}
 	vkDestroyDescriptorPool(device, descriptorPoolHDR, nullptr);
-	for (int i = 0; i < lightPool.size(); i++) {
-		vkDestroyDescriptorPool(device, descriptorPoolShadows[i], nullptr);
-	}
 	for (int i = 0; i < lightPool.size() + 2; i++) {
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayouts[i], nullptr);
 	}
-	for (int pool = 0; pool < indexBufferMemorys.size(); pool++) {
-		vkDestroyBuffer(device, indexBuffers[pool], nullptr);
-		vkFreeMemory(device, indexBufferMemorys[pool], nullptr);
-	}
-	for (int pool = 0; pool < indexInstBufferMemorys.size(); pool++) {
-		vkDestroyBuffer(device, indexInstBuffers[pool], nullptr);
-		vkFreeMemory(device, indexInstBufferMemorys[pool], nullptr);
-	}
 	vkDestroyBuffer(device, vertexBuffer, nullptr);
 	vkFreeMemory(device, vertexBufferMemory, nullptr);
-	vkDestroyBuffer(device, vertexInstBuffer, nullptr);
-	vkFreeMemory(device, vertexInstBufferMemory, nullptr);
-	vkDestroyPipeline(device, graphicsPipeline, nullptr);
-	vkDestroyPipeline(device, graphicsInstPipeline, nullptr);
-	for (int i = 0; i < lightPool.size(); i++) {
-		vkDestroyPipelineLayout(device, pipelineLayoutShadows[i], nullptr);
-	}
-	vkDestroyPipelineLayout(device, pipelineLayoutHDR, nullptr);
+	vkDestroyPipelineLayout(device, pipelineLayoutRT, nullptr);
 	vkDestroyPipelineLayout(device, pipelineLayoutFinal, nullptr);
 	vkDestroyRenderPass(device, renderPass, nullptr);
 	for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
@@ -661,28 +611,14 @@ void RTSystem::createAttachments() {
 	extent.width = mainWindow->resolution.first;
 	extent.height = mainWindow->resolution.second;
 	attachmentImages.resize(swapChainImages.size());
-	shadowImages.resize(lightPool.size());
 	attachmentMemorys.resize(swapChainImages.size());
-	shadowMemorys.resize(lightPool.size());
 
-	for (int i = 0; i < lightPool.size(); i++) {
-		shadowImages[i].resize(swapChainImages.size());
-		shadowMemorys[i].resize(swapChainImages.size());
-	}
 	for (size_t image = 0; image < swapChainImages.size(); image++) {
 		createImage(extent.width, extent.height, VK_FORMAT_R32G32B32A32_SFLOAT,
 			VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
 			| VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, 0,
 			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachmentImages[image],
 			attachmentMemorys[image]);
-		for (int i = 0; i < lightPool.size(); i++) {
-			uint32_t shadowRes = lightPool[i].shadowRes;
-			if (shadowRes == 0) shadowRes = 1;
-			createImage(shadowRes, shadowRes, VK_FORMAT_B8G8R8A8_UNORM,
-				VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0,
-				VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowImages[i][image],
-				shadowMemorys[i][image]);
-		}
 	}
 }
 
@@ -700,114 +636,77 @@ void RTSystem::createImageViews() {
 		attachmentImageViews[imageIndex] = createImageView(
 			attachmentImages[imageIndex], VK_FORMAT_R32G32B32A32_SFLOAT);
 	}
-	shadowImageViews.resize(shadowImages.size());
-	shadowSamplers.resize(shadowImages.size());
-	for (int i = 0; i < shadowImages.size(); i++) {
-		shadowImageViews[i].resize(shadowImages[i].size());
-		shadowSamplers[i].resize(shadowImages[i].size());
+}
+
+
+void RTSystem::createBLAccelereationStructures() {
+	size_t meshes = meshIndexBuffers.size();
+	std::vector< VkAccelerationStructureGeometryKHR> geometries =
+		std::vector< VkAccelerationStructureGeometryKHR>(meshes);
+	std::vector<VkAccelerationStructureBuildRangeInfoKHR> offsets =
+		std::vector< VkAccelerationStructureBuildRangeInfoKHR>(meshes);
+	//Create in terms of meshes
+	for(int mesh = 0; mesh < meshes; mesh++){
+		//Produce geometry
+		VkDeviceAddress vertexAddress = getBufferAddress(device, vertexBuffer);
+		VkDeviceAddress indexAddress = getBufferAddress(device, meshIndexBuffers[mesh]);
+		VkDeviceAddress transformAddress = getBufferAddress(device, meshTransformBuffers[mesh]);
+	
+		uint32_t maxTriCount = indexPoolsMesh[mesh].size()/3;
+		
+		
+		
+		VkAccelerationStructureGeometryTrianglesDataKHR triangles
+			{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR };
+		triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+		triangles.vertexData.deviceAddress = vertexAddress;
+		triangles.vertexStride = sizeof(Vertex);
+		triangles.indexType = VK_INDEX_TYPE_UINT32;
+		triangles.indexData.deviceAddress = indexAddress;
+		triangles.transformData.deviceAddress = transformAddress;
+		triangles.maxVertex = meshMinMax[mesh].second;
+
+		geometries[mesh] = VkAccelerationStructureGeometryKHR{
+			VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR
+		};
+		geometries[mesh].geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+		geometries[mesh].flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+		geometries[mesh].geometry.triangles = triangles;
+
+		
+		offsets[mesh].firstVertex = 0;
+		offsets[mesh].primitiveCount = maxTriCount;
+		offsets[mesh].primitiveOffset = 0;
+		offsets[mesh].transformOffset = 0;
+
+
+		//Build
+
+		//Create
+
+		//Compact
+		
 	}
-	for (size_t light = 0; light < shadowImages.size();
-		light++) {
-		//HERE
-		for (int imageIndex = 0; imageIndex < shadowImages[light].size(); imageIndex++) {
-			shadowImageViews[light][imageIndex] = createImageView(
-				shadowImages[light][imageIndex], VK_FORMAT_B8G8R8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
 
+	//Do same for init pools
+}
 
-			VkPhysicalDeviceProperties properties{};
-			vkGetPhysicalDeviceProperties(physicalDevice, &properties);
-			VkSamplerCreateInfo samplerInfo{};
-			samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-			samplerInfo.magFilter = VK_FILTER_LINEAR;
-			samplerInfo.minFilter = VK_FILTER_LINEAR;
-			samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-			samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-			samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-			samplerInfo.anisotropyEnable = VK_TRUE;
-			samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy; //TODO: make this variable
-			samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_WHITE;
-			samplerInfo.unnormalizedCoordinates = VK_FALSE;
-			samplerInfo.compareEnable = VK_FALSE;
-			samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
-			samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-			samplerInfo.mipLodBias = 0.f;
-			samplerInfo.minLod = 0;
-			samplerInfo.maxLod = 0;
+void RTSystem::createTLAccelereationStructures() {
+	//Produce geometry
 
-			if (vkCreateSampler(device, &samplerInfo, nullptr, &shadowSamplers[light][imageIndex]) != VK_SUCCESS) {
-				throw std::runtime_error("ERROR: Unable to create a sampler in RTSystem.");
-			}
-		}
-	}
+	//Build
+
+	//Create
+
+	//Compact
+}
+
+void RTSystem::createAccelereationStructures() {
+	createBLAccelereationStructures();
+	createTLAccelereationStructures();
 }
 
 void RTSystem::createRenderPasses() {
-	shadowPasses.resize(lightPool.size());
-	for (int i = 0; i < lightPool.size(); i++) {
-		VkAttachmentDescription shadowAttachment = {};
-		VkAttachmentReference shadowAttachmentRef = {};
-		VkSubpassDescription shadowSubpass = {};
-
-
-		VkAttachmentDescription depthAttachment{};
-		depthAttachment.format = VK_FORMAT_D16_UNORM;
-		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference depthAttachmentRef{};
-		depthAttachmentRef.attachment = 1;
-		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		shadowAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
-		shadowAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		shadowAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		shadowAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		shadowAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		shadowAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		shadowAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		shadowAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		shadowAttachmentRef.attachment = 0;
-		shadowAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		shadowSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		shadowSubpass.colorAttachmentCount = 1;
-		shadowSubpass.pColorAttachments = &shadowAttachmentRef;
-		shadowSubpass.pDepthStencilAttachment = &depthAttachmentRef;
-
-		VkAttachmentDescription attachments[]{ shadowAttachment,depthAttachment };
-
-		VkSubpassDependency shadowDependency;
-		shadowDependency = {};
-		shadowDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-		shadowDependency.dstSubpass = 0;
-		shadowDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-			VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		shadowDependency.srcAccessMask = 0;
-		shadowDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT |
-			VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-		shadowDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
-			VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-
-
-		VkRenderPassCreateInfo renderPassInfo{};
-		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = 2;
-		renderPassInfo.pAttachments = attachments;
-		renderPassInfo.subpassCount = 1;
-		renderPassInfo.pSubpasses = &shadowSubpass;
-		renderPassInfo.dependencyCount = 1;
-		renderPassInfo.pDependencies = &shadowDependency;
-
-		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowPasses[i]) != VK_SUCCESS) {
-			throw std::runtime_error("ERROR: Was unable to create render pass in RTSystem.");
-		}
-	}
 
 	std::vector<VkSubpassDescription> finalSubpasses = std::vector<VkSubpassDescription>(2);
 	for (int i = 0; i < 2; i++) finalSubpasses[i] = {};
@@ -918,24 +817,8 @@ void RTSystem::createRenderPasses() {
 
 void RTSystem::createDescriptorSetLayout() {
 
-	descriptorSetLayouts.resize(2 + lightPool.size());
+	descriptorSetLayouts.resize(2);
 
-	for (int i = 0; i < lightPool.size(); i++) {
-		VkDescriptorSetLayoutBinding meshBinding{};
-		meshBinding.binding = 0;
-		meshBinding.descriptorCount = 1;
-		meshBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		meshBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-		VkDescriptorSetLayoutCreateInfo layoutInfoShadow{};
-		layoutInfoShadow.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layoutInfoShadow.bindingCount = 1;
-		layoutInfoShadow.pBindings = &meshBinding;
-		if (vkCreateDescriptorSetLayout(
-			device, &layoutInfoShadow, nullptr, &descriptorSetLayouts[i]) != VK_SUCCESS) {
-			throw std::runtime_error("ERROR: Failed to create a descriptor set layout in Vulkan System.");
-		}
-	}
 
 
 
@@ -1038,7 +921,7 @@ void RTSystem::createDescriptorSetLayout() {
 	layoutInfo.bindingCount = rawEnvironment.has_value() ? 13 : 10;
 	layoutInfo.pBindings = bindings;
 	if (vkCreateDescriptorSetLayout(
-		device, &layoutInfo, nullptr, &descriptorSetLayouts[lightPool.size()]) != VK_SUCCESS) {
+		device, &layoutInfo, nullptr, &descriptorSetLayouts[0]) != VK_SUCCESS) {
 		throw std::runtime_error("ERROR: Failed to create a descriptor set layout in Vulkan System.");
 	}
 
@@ -1054,7 +937,7 @@ void RTSystem::createDescriptorSetLayout() {
 	layoutInfoFinal.bindingCount = 1;
 	layoutInfoFinal.pBindings = &hdrBinding;
 	if (vkCreateDescriptorSetLayout(
-		device, &layoutInfoFinal, nullptr, &descriptorSetLayouts[lightPool.size() + 1]) != VK_SUCCESS) {
+		device, &layoutInfoFinal, nullptr, &descriptorSetLayouts[1]) != VK_SUCCESS) {
 		throw std::runtime_error("ERROR: Failed to create a descriptor set layout in Vulkan System.");
 	}
 
@@ -1176,31 +1059,7 @@ void RTSystem::createGraphicsPipeline(std::string vertShader,
 }
 
 void RTSystem::createGraphicsPipelines() {
-	size_t subpassCount = 2 + lightPool.size();
-	pipelineLayoutShadows.resize(lightPool.size());
-	graphicsPipelineShadows.resize(lightPool.size());
-	graphicsInstPipelineShadows.resize(lightPool.size());
-
-	for (int i = 0; i < lightPool.size(); i++) {
-
-		VkPushConstantRange lightTransformConstant;
-		lightTransformConstant.offset = 0;
-		lightTransformConstant.size = sizeof(mat44<float>);
-		lightTransformConstant.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-		VkPipelineLayoutCreateInfo pipelineLayoutInfoShadow{};
-		pipelineLayoutInfoShadow.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInfoShadow.setLayoutCount = 1;
-		pipelineLayoutInfoShadow.pSetLayouts = &descriptorSetLayouts[i];
-		pipelineLayoutInfoShadow.pushConstantRangeCount = 1;
-		pipelineLayoutInfoShadow.pPushConstantRanges = &lightTransformConstant;
-		if (vkCreatePipelineLayout(device, &pipelineLayoutInfoShadow, nullptr, &pipelineLayoutShadows[i]) != VK_SUCCESS) {
-			throw std::runtime_error("ERROR: Unable to create pipeline layout in RTSystems.");
-		}
-		createGraphicsPipeline("/vertShadow.spv", "/fragShadow.spv", graphicsPipelineShadows[i], pipelineLayoutShadows[i], 0, shadowPasses[i]);
-
-		createGraphicsPipeline("/vertShadowInst.spv", "/fragShadow.spv", graphicsInstPipelineShadows[i], pipelineLayoutShadows[i], 0, shadowPasses[i]);
-
-	}
+	size_t subpassCount = 2;
 
 	VkPushConstantRange numLightsConstant;
 	numLightsConstant.offset = 0;
@@ -1208,22 +1067,22 @@ void RTSystem::createGraphicsPipelines() {
 	numLightsConstant.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 
-	VkPipelineLayoutCreateInfo pipelineLayoutInfoHDR{};
-	pipelineLayoutInfoHDR.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfoHDR.setLayoutCount = 1;
-	pipelineLayoutInfoHDR.pSetLayouts = &descriptorSetLayouts[lightPool.size()];
-	pipelineLayoutInfoHDR.pushConstantRangeCount = 1;
-	pipelineLayoutInfoHDR.pPushConstantRanges = &numLightsConstant;
+	VkPipelineLayoutCreateInfo pipelineLayoutInfoRT{};
+	pipelineLayoutInfoRT.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfoRT.setLayoutCount = 1;
+	pipelineLayoutInfoRT.pSetLayouts = &descriptorSetLayouts[0];
+	pipelineLayoutInfoRT.pushConstantRangeCount = 1;
+	pipelineLayoutInfoRT.pPushConstantRanges = &numLightsConstant;
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfoFinal{};
 	pipelineLayoutInfoFinal.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfoFinal.setLayoutCount = 1;
-	pipelineLayoutInfoFinal.pSetLayouts = &descriptorSetLayouts[lightPool.size() + 1];
+	pipelineLayoutInfoFinal.pSetLayouts = &descriptorSetLayouts[1];
 	pipelineLayoutInfoFinal.pushConstantRangeCount = 0;
 	pipelineLayoutInfoFinal.pPushConstantRanges = nullptr;
 
 
-	if (vkCreatePipelineLayout(device, &pipelineLayoutInfoHDR, nullptr, &pipelineLayoutHDR) != VK_SUCCESS) {
+	if (vkCreatePipelineLayout(device, &pipelineLayoutInfoRT, nullptr, &pipelineLayoutRT) != VK_SUCCESS) {
 		throw std::runtime_error("ERROR: Unable to create pipeline layout in RTSystems.");
 	}
 
@@ -1232,13 +1091,10 @@ void RTSystem::createGraphicsPipelines() {
 	}
 
 	if (rawEnvironment.has_value()) {
-		createGraphicsPipeline("/vertEnv.spv", "/fragEnv.spv", graphicsPipeline, pipelineLayoutHDR, subpassCount - 2, renderPass);
-
-		createGraphicsPipeline("/vertInstEnv.spv", "/fragEnv.spv", graphicsInstPipeline, pipelineLayoutHDR, 0, renderPass);
+		createGraphicsPipeline("/vertEnv.spv", "/fragEnv.spv", graphicsPipelineRT, pipelineLayoutRT, 0, renderPass);
 	}
 	else {
-		createGraphicsPipeline("/vert.spv", "/frag.spv", graphicsPipeline, pipelineLayoutHDR, 0, renderPass);
-		createGraphicsPipeline("/vertInst.spv", "/frag.spv", graphicsInstPipeline, pipelineLayoutHDR, 0, renderPass);
+		createGraphicsPipeline("/vert.spv", "/frag.spv", graphicsPipelineRT, pipelineLayoutRT, 0, renderPass);
 	}
 	createGraphicsPipeline("/vertQuad.spv", "/fragFinal.spv", graphicsPipelineFinal, pipelineLayoutFinal, 1, renderPass);
 }
@@ -1258,32 +1114,7 @@ VkShaderModule RTSystem::createShaderModule(const std::vector<char>& code) {
 
 void RTSystem::createFramebuffers() {
 	swapChainFramebuffers.resize(swapChainImageViews.size());
-	shadowFramebuffers.resize(lightPool.size());
-	for (int i = 0; i < lightPool.size(); i++) {
-		shadowFramebuffers[i].resize(swapChainImageViews.size());
-	}
 	for (size_t image = 0; image < swapChainImageViews.size(); image++) {
-		for (int i = 0; i < lightPool.size(); i++) {
-
-			size_t shadowRes = lightPool[i].shadowRes;
-			if (shadowRes == 0) shadowRes = 1;
-			VkImageView attachments[] = { shadowImageViews[i][image],shadowDepthImageViews[i] };
-
-			VkFramebufferCreateInfo framebufferInfo{};
-			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-			framebufferInfo.renderPass = shadowPasses[i];
-			framebufferInfo.attachmentCount = 2;
-			framebufferInfo.pAttachments = attachments;
-			framebufferInfo.width = shadowRes;
-			framebufferInfo.height = shadowRes;
-			framebufferInfo.layers = 1;
-			if (vkCreateFramebuffer(device, &framebufferInfo, nullptr,
-				&(shadowFramebuffers[i][image])) != VK_SUCCESS) {
-				throw std::runtime_error("ERROR: Unable to create a framebuffer in RTSystem.");
-			}
-		}
-
-
 		std::vector<VkImageView> attachments;
 		attachments.push_back(swapChainImageViews[image]);
 		attachments.push_back(depthImageView);
@@ -1407,28 +1238,39 @@ void RTSystem::createVertexBuffer(bool realloc) {
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
 		vkFreeMemory(device, stagingBufferMemory, nullptr);
 	}
+}
 
-	if (useInstancing) {
+void RTSystem::createTransformBuffers(bool realloc) {
+
+	int stagingBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	int usageBits = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | 
+		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+	int propertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	meshTransformBuffers.resize(transformPoolsMesh.size());
+	meshTransformMemorys.resize(transformPoolsMesh.size());
+	for (int mesh = 0; mesh < transformPoolsMesh.size(); mesh++) {
+		//Convert transform to vulkan format
+		VkTransformMatrixKHR transform = transformPoolsMesh[mesh].toVulkan();
+
 		//Create temp staging buffer
-		VkDeviceSize bufferInstSize = sizeof(verticesInst[0]) * verticesInst.size();
-		VkBuffer stagingInstBuffer{};
-		VkDeviceMemory stagingInstBufferMemory{};
-
-		createBuffer(bufferInstSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingBits,
-			stagingInstBuffer, stagingInstBufferMemory, true);
+		VkDeviceSize bufferSize = sizeof(VkTransformMatrixKHR);
+		VkBuffer stagingBuffer{};
+		VkDeviceMemory stagingBufferMemory{};
+		createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingBits,
+			stagingBuffer, stagingBufferMemory, true);
 
 		//Move vertex data to GPU
 		void* data;
-		vkMapMemory(device, stagingInstBufferMemory, 0, bufferInstSize, 0, &data);
-		memcpy(data, verticesInst.data(), (size_t)bufferInstSize);
-		vkUnmapMemory(device, stagingInstBufferMemory);
+		vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+		memcpy(data, &transform, (size_t)bufferSize);
+		vkUnmapMemory(device, stagingBufferMemory);
 
 		//Create proper vertex buffer
-		createBuffer(bufferInstSize, vertexUsageBits, vertexPropertyBits,
-			vertexInstBuffer, vertexInstBufferMemory, realloc);
-		copyBuffer(stagingInstBuffer, vertexInstBuffer, bufferInstSize);
-		vkDestroyBuffer(device, stagingInstBuffer, nullptr);
-		vkFreeMemory(device, stagingInstBufferMemory, nullptr);
+		createBuffer(bufferSize, usageBits, propertyBits,
+			meshTransformBuffers[mesh], meshTransformMemorys[mesh], realloc);
+		copyBuffer(stagingBuffer, meshTransformBuffers[mesh], bufferSize);
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, stagingBufferMemory, nullptr);
 	}
 }
 
@@ -1451,60 +1293,6 @@ mat44<float> RTSystem::getCameraSpace(DrawCamera camera, float_3 useMoveVec, flo
 	return local;
 }
 
-void RTSystem::cullInstances() {
-
-	if (transformInstPools.size() < transformInstPoolsStore.size()) {
-		transformInstPools = std::vector<std::vector<mat44<float>>>(transformInstPoolsStore.size());
-		transformEnvironmentInstPools = std::vector<std::vector<mat44<float>>>(transformEnvironmentInstPoolsStore.size());
-		transformNormalInstPools = std::vector<std::vector<mat44<float>>>(transformNormalInstPoolsStore.size());
-	}
-	DrawCamera camera = cameras[currentCamera];
-	frustumInfo info = findFrustumInfo(camera);
-	mat44<float> cameraSpace = getCameraSpace(camera, moveVec, dirVec);
-	for (size_t pool = 0; pool < transformInstPools.size(); pool++) {
-		transformInstPools[pool].clear();
-		transformInstPools[pool].reserve(transformInstPoolsStore[pool].size());
-		if (rawEnvironment.has_value()) {
-			transformEnvironmentInstPools[pool].clear();
-			transformEnvironmentInstPools[pool].reserve(transformInstPoolsStore[pool].size());
-		}
-		transformNormalInstPools[pool].clear();
-		transformNormalInstPools[pool].reserve(transformInstPoolsStore[pool].size());
-		for (size_t transform = 0; transform < transformInstPoolsStore[pool].size(); transform++) {
-			if (!useCulling || sphereInFrustum(boundingSpheresInst[transformInstIndexPools[pool]], info, cameraSpace, transformInstPoolsStore[pool][transform])) {
-				transformInstPools[pool].push_back(transformInstPoolsStore[pool][transform]);
-				if (rawEnvironment.has_value()) {
-					transformEnvironmentInstPools[pool].push_back(transformEnvironmentInstPoolsStore[pool][transform]);
-				}
-				transformNormalInstPools[pool].push_back(transformNormalInstPoolsStore[pool][transform]);
-			}
-		}
-	}
-}
-
-void RTSystem::cullIndexPools() {
-	if (indexPools.size() < indexPoolsStore.size()) {
-		indexPools = std::vector<std::vector<uint32_t>>(indexPoolsStore.size());
-		indexBuffersValid = std::vector<bool>(indexPoolsStore.size());
-	}
-	DrawCamera camera = cameras[currentCamera];
-	frustumInfo info = findFrustumInfo(camera);
-	mat44<float> cameraSpace = getCameraSpace(camera, moveVec, dirVec);
-	for (size_t pool = 0; pool < drawPools.size(); pool++) {
-		indexPools[pool].clear();
-		indexPools[pool].reserve(indexPoolsStore[pool].size());
-		for (size_t node = 0; node < drawPools[pool].size(); node++) {
-			if (!useCulling || sphereInFrustum(drawPools[pool][node].boundingSphere, info, cameraSpace, transformPools[pool][node])) {
-				int indexBegin = drawPools[pool][node].indexStart;
-				int indexEnd = drawPools[pool][node].indexCount + indexBegin;
-				indexPools[pool].insert(
-					indexPools[pool].end(),
-					indexPoolsStore[pool].begin() + indexBegin,
-					indexPoolsStore[pool].begin() + indexEnd);
-			}
-		}
-	}
-}
 
 void RTSystem::transitionImageLayout(VkImage image, VkFormat format,
 	VkImageLayout oldLayout, VkImageLayout newLayout, int layers, int levels) {
@@ -1807,7 +1595,6 @@ void RTSystem::createTextureImages() {
 		);
 	}
 	createTextureImage(LUT, LUTImage, LUTImageMemory, LUTImageView, LUTSampler);
-	createTextureImage(defaultShadowTex, defaultShadowImage, defaultShadowImageMemory, defaultShadowImageView, defaultShadowSampler);
 	cubeImages.resize(rawCubes.size());
 	cubeImageMemorys.resize(rawCubes.size());
 	cubeImageViews.resize(rawCubes.size());
@@ -1838,149 +1625,75 @@ void RTSystem::createTextureImages() {
 
 void RTSystem::createIndexBuffers(bool realloc, bool andFree) {
 	if (andFree) {
-		for (int pool = 0; pool < indexBufferMemorys.size(); pool++) {
-			if (!indexBuffersValid[pool]) continue;
-			vkDestroyBuffer(device, indexBuffers[pool], nullptr);
-			vkFreeMemory(device, indexBufferMemorys[pool], nullptr);
-		}
-		for (int pool = 0; pool < indexInstBufferMemorys.size(); pool++) {
-			vkDestroyBuffer(device, indexInstBuffers[pool], nullptr);
-			vkFreeMemory(device, indexInstBufferMemorys[pool], nullptr);
+		for (int pool = 0; pool < meshIndexBufferMemorys.size(); pool++) {
+			vkDestroyBuffer(device, meshIndexBuffers[pool], nullptr);
+			vkFreeMemory(device, meshIndexBufferMemorys[pool], nullptr);
 		}
 	}
-	if (useVertexBuffer) {
-		cullIndexPools();
-		for (int pool = 0; pool < indexPools.size(); pool++) {
-			if (indexPools[pool].size() == 0) {
-				indexBuffersValid[pool] = false;
-			}
-			else {
-				indexBuffersValid[pool] = true;
-			}
-		}
 
-		indexBufferMemorys.resize(indexPools.size());
-		indexBuffers.resize(indexPools.size());
-		for (size_t pool = 0; pool < indexPools.size(); pool++) {
-			if (!indexBuffersValid[pool]) continue;
-			VkDeviceSize bufferSize = sizeof(indexPools[pool][0]) * indexPools[pool].size();
-			if (bufferSize > 0) {
+	meshIndexBufferMemorys.resize(indexPoolsMesh.size());
+	meshIndexBuffers.resize(indexPoolsMesh.size());
+	for (size_t pool = 0; pool < indexPoolsMesh.size(); pool++) {
+		VkDeviceSize bufferSize = sizeof(indexPoolsMesh[pool][0]) * indexPoolsMesh[pool].size();
+		if (bufferSize > 0) {
 
-				//Create temp staging buffer
-				VkBuffer stagingBuffer{};
-				VkDeviceMemory stagingBufferMemory{};
-				int stagingBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-				createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingBits,
-					stagingBuffer, stagingBufferMemory, true);
+			//Create temp staging buffer
+			VkBuffer stagingBuffer{};
+			VkDeviceMemory stagingBufferMemory{};
+			int stagingBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+			createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingBits,
+				stagingBuffer, stagingBufferMemory, true);
 
-				//Move index data to GPU
-				void* data;
-				vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-				memcpy(data, indexPools[pool].data(), (size_t)bufferSize);
-				vkUnmapMemory(device, stagingBufferMemory);
+			//Move index data to GPU
+			void* data;
+			vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
+			memcpy(data, indexPoolsMesh[pool].data(), (size_t)bufferSize);
+			vkUnmapMemory(device, stagingBufferMemory);
 
-				//Create proper index buffer
-				int indexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-				int indexPropertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-				createBuffer(bufferSize, indexUsageBits, indexPropertyBits,
-					indexBuffers[pool], indexBufferMemorys[pool], realloc);
-				copyBuffer(stagingBuffer, indexBuffers[pool], bufferSize);
+			//Create proper index buffer
+			int indexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+			int indexPropertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+			createBuffer(bufferSize, indexUsageBits, indexPropertyBits,
+				meshIndexBuffers[pool], meshIndexBufferMemorys[pool], realloc);
+			copyBuffer(stagingBuffer, meshIndexBuffers[pool], bufferSize);
 
-				vkDestroyBuffer(device, stagingBuffer, nullptr);
-				vkFreeMemory(device, stagingBufferMemory, nullptr);
-			}
-		}
-	}
-	if (useInstancing) {
-		indexInstBufferMemorys.resize(indexInstPools.size());
-		indexInstBuffers.resize(indexInstPools.size());
-		for (size_t pool = 0; pool < indexInstPools.size(); pool++) {
-			VkDeviceSize bufferSize = sizeof(indexInstPools[pool][0]) * indexInstPools[pool].size();
-			if (bufferSize > 0) {
-
-				//Create temp staging buffer
-				VkBuffer stagingBuffer{};
-				VkDeviceMemory stagingBufferMemory{};
-				int stagingBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-				createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingBits,
-					stagingBuffer, stagingBufferMemory, true);
-
-				//Move index data to GPU
-				void* data;
-				vkMapMemory(device, stagingBufferMemory, 0, bufferSize, 0, &data);
-				memcpy(data, indexInstPools[pool].data(), (size_t)bufferSize);
-				vkUnmapMemory(device, stagingBufferMemory);
-
-				//Create proper index buffer
-				int indexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-				int indexPropertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-				createBuffer(bufferSize, indexUsageBits, indexPropertyBits,
-					indexInstBuffers[pool], indexInstBufferMemorys[pool], realloc);
-				copyBuffer(stagingBuffer, indexInstBuffers[pool], bufferSize);
-
-				vkDestroyBuffer(device, stagingBuffer, nullptr);
-				vkFreeMemory(device, stagingBufferMemory, nullptr);
-			}
+			vkDestroyBuffer(device, stagingBuffer, nullptr);
+			vkFreeMemory(device, stagingBufferMemory, nullptr);
 		}
 	}
 }
 
 void RTSystem::createUniformBuffers(bool realloc) {
-	cullInstances();
-
-	size_t transformsSize = useVertexBuffer ?
-		transformPools.size() : 0;
-	transformsSize = useInstancing ?
-		transformsSize + transformInstPools.size() :
-		transformsSize;
-	uniformBuffersTransformsPools.resize(transformsSize);
-	uniformBuffersMemoryTransformsPools.resize(transformsSize);
-	uniformBuffersMappedTransformsPools.resize(transformsSize);
-	uniformBuffersLightPerspectivePools.resize(transformsSize);
-	uniformBuffersMemoryLightPerspectivePools.resize(transformsSize);
-	uniformBuffersMappedLightPerspectivePools.resize(transformsSize);
-	uniformBuffersModelsPools.resize(lightPool.size());
-	uniformBuffersMemoryModelsPools.resize(lightPool.size());
-	uniformBuffersMappedModelsPools.resize(lightPool.size());
-	for (int i = 0; i < lightPool.size(); i++) {
-		uniformBuffersModelsPools[i].resize(transformsSize);
-		uniformBuffersMemoryModelsPools[i].resize(transformsSize);
-		uniformBuffersMappedModelsPools[i].resize(transformsSize);
-	}
+	size_t numMeshes = transformPoolsMesh.size();
+	uniformBuffersLightPerspectivePools.resize(numMeshes);
+	uniformBuffersMemoryLightPerspectivePools.resize(numMeshes);
+	uniformBuffersMappedLightPerspectivePools.resize(numMeshes);
 	if (rawEnvironment.has_value()) {
-		uniformBuffersEnvironmentTransformsPools.resize(transformsSize);
-		uniformBuffersMemoryEnvironmentTransformsPools.resize(transformsSize);
-		uniformBuffersMappedEnvironmentTransformsPools.resize(transformsSize);
-		uniformBuffersNormalTransformsPools.resize(transformsSize);
-		uniformBuffersMemoryNormalTransformsPools.resize(transformsSize);
-		uniformBuffersMappedNormalTransformsPools.resize(transformsSize);
+		uniformBuffersEnvironmentTransformsPools.resize(numMeshes);
+		uniformBuffersMemoryEnvironmentTransformsPools.resize(numMeshes);
+		uniformBuffersMappedEnvironmentTransformsPools.resize(numMeshes);
+		uniformBuffersNormalTransformsPools.resize(numMeshes);
+		uniformBuffersMemoryNormalTransformsPools.resize(numMeshes);
+		uniformBuffersMappedNormalTransformsPools.resize(numMeshes);
 	}
-	uniformBuffersCamerasPools.resize(transformsSize);
-	uniformBuffersMemoryCamerasPools.resize(transformsSize);
-	uniformBuffersMappedCamerasPools.resize(transformsSize);
-	uniformBuffersLightsPools.resize(transformsSize);
-	uniformBuffersMemoryLightsPools.resize(transformsSize);
-	uniformBuffersMappedLightsPools.resize(transformsSize);
-	uniformBuffersLightTransformsPools.resize(transformsSize);
-	uniformBuffersMemoryLightTransformsPools.resize(transformsSize);
-	uniformBuffersMappedLightTransformsPools.resize(transformsSize);
+	uniformBuffersCamerasPools.resize(numMeshes);
+	uniformBuffersMemoryCamerasPools.resize(numMeshes);
+	uniformBuffersMappedCamerasPools.resize(numMeshes);
+	uniformBuffersLightsPools.resize(numMeshes);
+	uniformBuffersMemoryLightsPools.resize(numMeshes);
+	uniformBuffersMappedLightsPools.resize(numMeshes);
+	uniformBuffersLightTransformsPools.resize(numMeshes);
+	uniformBuffersMemoryLightTransformsPools.resize(numMeshes);
+	uniformBuffersMappedLightTransformsPools.resize(numMeshes);
 
-	uniformBuffersMaterialsPools.resize(transformsSize);
-	uniformBuffersMemoryMaterialsPools.resize(transformsSize);
-	uniformBuffersMappedMaterialsPools.resize(transformsSize);
-	for (size_t pool = 0; pool < transformsSize; pool++) {
-		uniformBuffersTransformsPools[pool].resize(MAX_FRAMES_IN_FLIGHT);
-		uniformBuffersMemoryTransformsPools[pool].resize(MAX_FRAMES_IN_FLIGHT);
-		uniformBuffersMappedTransformsPools[pool].resize(MAX_FRAMES_IN_FLIGHT);
+	uniformBuffersMaterialsPools.resize(numMeshes);
+	uniformBuffersMemoryMaterialsPools.resize(numMeshes);
+	uniformBuffersMappedMaterialsPools.resize(numMeshes);
+	for (size_t pool = 0; pool < numMeshes; pool++) {
 		uniformBuffersLightPerspectivePools[pool].resize(MAX_FRAMES_IN_FLIGHT);
 		uniformBuffersMemoryLightPerspectivePools[pool].resize(MAX_FRAMES_IN_FLIGHT);
 		uniformBuffersMappedLightPerspectivePools[pool].resize(MAX_FRAMES_IN_FLIGHT);
 
-		for (int i = 0; i < lightPool.size(); i++) {
-			uniformBuffersModelsPools[i][pool].resize(MAX_FRAMES_IN_FLIGHT);
-			uniformBuffersMemoryModelsPools[i][pool].resize(MAX_FRAMES_IN_FLIGHT);
-			uniformBuffersMappedModelsPools[i][pool].resize(MAX_FRAMES_IN_FLIGHT);
-		}
 		if (rawEnvironment.has_value()) {
 			uniformBuffersEnvironmentTransformsPools[pool].resize(MAX_FRAMES_IN_FLIGHT);
 			uniformBuffersMemoryEnvironmentTransformsPools[pool].resize(MAX_FRAMES_IN_FLIGHT);
@@ -2007,143 +1720,51 @@ void RTSystem::createUniformBuffers(bool realloc) {
 		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	for (int frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
 		size_t pool = 0;
-		for (; pool < transformPools.size() && useVertexBuffer; pool++)
-		{
-			VkDeviceSize bufferSizeTransforms = sizeof(mat44<float>) * transformPools[pool].size();
-			VkDeviceSize bufferSizeNormalTransforms = sizeof(mat44<float>) * transformPools[pool].size();
-			VkDeviceSize bufferSizeEnvironmentTransforms;
-			if (rawEnvironment.has_value()) bufferSizeEnvironmentTransforms = sizeof(mat44<float>) * transformEnvironmentPools[pool].size();
-			VkDeviceSize bufferSizeCameras = sizeof(mat44<float>);
-			VkDeviceSize bufferSizeLights = sizeof(Light) * lightPool.size();
-			VkDeviceSize bufferSizeLightTransforms = sizeof(mat44<float>) * lightPool.size();
-			VkDeviceSize bufferSizeMaterials = sizeof(DrawMaterial) * materialPools[pool].size();
+		VkDeviceSize bufferSizeNormalTransforms = sizeof(mat44<float>) * numMeshes;
+		VkDeviceSize bufferSizeEnvironmentTransforms = sizeof(mat44<float>) * numMeshes;
+		VkDeviceSize bufferSizeCameras = sizeof(mat44<float>) * numMeshes;
+		VkDeviceSize bufferSizeLights = sizeof(Light) * lightPool.size() * numMeshes;
+		VkDeviceSize bufferSizeLightTransforms = sizeof(mat44<float>) * lightPool.size() * numMeshes;
+		VkDeviceSize bufferSizeMaterials = sizeof(DrawMaterial) * numMeshes;
 
-			for (int i = 0; i < lightPool.size(); i++) {
-				createBuffer(bufferSizeTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersModelsPools[i][pool][frame], uniformBuffersMemoryModelsPools[i][pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryModelsPools[i][pool][frame], 0, bufferSizeTransforms, 0,
-					uniformBuffersMappedModelsPools[i][pool].data() + frame);
-			}
-			createBuffer(bufferSizeTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-				uniformBuffersTransformsPools[pool][frame], uniformBuffersMemoryTransformsPools[pool][frame], realloc);
-			vkMapMemory(device, uniformBuffersMemoryTransformsPools[pool][frame], 0, bufferSizeTransforms, 0,
-				uniformBuffersMappedTransformsPools[pool].data() + frame);
-			createBuffer(bufferSizeLightTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-				uniformBuffersLightPerspectivePools[pool][frame], uniformBuffersMemoryLightPerspectivePools[pool][frame], realloc);
-			vkMapMemory(device, uniformBuffersMemoryLightPerspectivePools[pool][frame], 0, bufferSizeLightTransforms, 0,
-				uniformBuffersMappedLightPerspectivePools[pool].data() + frame);
-			if (rawEnvironment.has_value()) {
-				createBuffer(bufferSizeNormalTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersNormalTransformsPools[pool][frame], uniformBuffersMemoryNormalTransformsPools[pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryNormalTransformsPools[pool][frame], 0, bufferSizeNormalTransforms, 0,
-					uniformBuffersMappedNormalTransformsPools[pool].data() + frame);
-				createBuffer(bufferSizeEnvironmentTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersEnvironmentTransformsPools[pool][frame], uniformBuffersMemoryEnvironmentTransformsPools[pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryEnvironmentTransformsPools[pool][frame], 0, bufferSizeEnvironmentTransforms, 0,
-					uniformBuffersMappedEnvironmentTransformsPools[pool].data() + frame);
-			}
-			createBuffer(bufferSizeCameras, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-				uniformBuffersCamerasPools[pool][frame], uniformBuffersMemoryCamerasPools[pool][frame], realloc);
-			vkMapMemory(device, uniformBuffersMemoryCamerasPools[pool][frame], 0, bufferSizeCameras, 0,
-				uniformBuffersMappedCamerasPools[pool].data() + frame);
-			if (lightPool.size() > 0) {
-				createBuffer(bufferSizeLights, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersLightsPools[pool][frame], uniformBuffersMemoryLightsPools[pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryLightsPools[pool][frame], 0, bufferSizeLights, 0,
-					uniformBuffersMappedLightsPools[pool].data() + frame);
-				createBuffer(bufferSizeLightTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersLightTransformsPools[pool][frame], uniformBuffersMemoryLightTransformsPools[pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryLightTransformsPools[pool][frame], 0, bufferSizeLightTransforms, 0,
-					uniformBuffersMappedLightTransformsPools[pool].data() + frame);
-			}
-			createBuffer(bufferSizeMaterials, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-				uniformBuffersMaterialsPools[pool][frame], uniformBuffersMemoryMaterialsPools[pool][frame], realloc);
-			vkMapMemory(device, uniformBuffersMemoryMaterialsPools[pool][frame], 0, bufferSizeMaterials, 0,
-				uniformBuffersMappedMaterialsPools[pool].data() + frame);
+		createBuffer(bufferSizeLightTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
+			uniformBuffersLightPerspectivePools[pool][frame], uniformBuffersMemoryLightPerspectivePools[pool][frame], realloc);
+		vkMapMemory(device, uniformBuffersMemoryLightPerspectivePools[pool][frame], 0, bufferSizeLightTransforms, 0,
+			uniformBuffersMappedLightPerspectivePools[pool].data() + frame);
+		if (rawEnvironment.has_value()) {
+			createBuffer(bufferSizeNormalTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
+				uniformBuffersNormalTransformsPools[pool][frame], uniformBuffersMemoryNormalTransformsPools[pool][frame], realloc);
+			vkMapMemory(device, uniformBuffersMemoryNormalTransformsPools[pool][frame], 0, bufferSizeNormalTransforms, 0,
+				uniformBuffersMappedNormalTransformsPools[pool].data() + frame);
+			createBuffer(bufferSizeEnvironmentTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
+				uniformBuffersEnvironmentTransformsPools[pool][frame], uniformBuffersMemoryEnvironmentTransformsPools[pool][frame], realloc);
+			vkMapMemory(device, uniformBuffersMemoryEnvironmentTransformsPools[pool][frame], 0, bufferSizeEnvironmentTransforms, 0,
+				uniformBuffersMappedEnvironmentTransformsPools[pool].data() + frame);
 		}
-		for (; pool < transformsSize && useInstancing; pool++)
-		{
-			//Unfortunately, the results of culling cant be used here, every possible transform needs to be accounted for in the buffer size
-			//Even if they end up unused!
-			VkDeviceSize bufferSizeTransforms = sizeof(mat44<float>) * transformInstPoolsStore[pool - transformPools.size()].size();
-			VkDeviceSize bufferSizeNormalTransforms = sizeof(mat44<float>) * transformInstPoolsStore[pool - transformPools.size()].size();
-			VkDeviceSize bufferSizeEnvironmentTransforms;
-			if (rawEnvironment.has_value())bufferSizeEnvironmentTransforms = sizeof(mat44<float>) * transformEnvironmentInstPoolsStore[pool - transformPools.size()].size();
-			VkDeviceSize bufferSizeCameras = sizeof(mat44<float>);
-			VkDeviceSize bufferSizeLights = sizeof(Light) * lightPool.size();
-			VkDeviceSize bufferSizeLightTransforms = sizeof(mat44<float>) * lightPool.size();
-			VkDeviceSize bufferSizeMaterials = sizeof(DrawMaterial);
-			createBuffer(bufferSizeTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-				uniformBuffersTransformsPools[pool][frame], uniformBuffersMemoryTransformsPools[pool][frame], realloc);
-			vkMapMemory(device, uniformBuffersMemoryTransformsPools[pool][frame], 0, bufferSizeTransforms, 0,
-				uniformBuffersMappedTransformsPools[pool].data() + frame);
+		createBuffer(bufferSizeCameras, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
+			uniformBuffersCamerasPools[pool][frame], uniformBuffersMemoryCamerasPools[pool][frame], realloc);
+		vkMapMemory(device, uniformBuffersMemoryCamerasPools[pool][frame], 0, bufferSizeCameras, 0,
+			uniformBuffersMappedCamerasPools[pool].data() + frame);
+		if (lightPool.size() > 0) {
+			createBuffer(bufferSizeLights, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
+				uniformBuffersLightsPools[pool][frame], uniformBuffersMemoryLightsPools[pool][frame], realloc);
+			vkMapMemory(device, uniformBuffersMemoryLightsPools[pool][frame], 0, bufferSizeLights, 0,
+				uniformBuffersMappedLightsPools[pool].data() + frame);
 			createBuffer(bufferSizeLightTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-				uniformBuffersLightPerspectivePools[pool][frame], uniformBuffersMemoryLightPerspectivePools[pool][frame], realloc);
-			vkMapMemory(device, uniformBuffersMemoryLightPerspectivePools[pool][frame], 0, bufferSizeLightTransforms, 0,
-				uniformBuffersMappedLightPerspectivePools[pool].data() + frame);
-			for (int i = 0; i < lightPool.size(); i++) {
-				createBuffer(bufferSizeTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersModelsPools[i][pool][frame], uniformBuffersMemoryModelsPools[i][pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryModelsPools[i][pool][frame], 0, bufferSizeTransforms, 0,
-					uniformBuffersMappedModelsPools[i][pool].data() + frame);
-			}
-			if (rawEnvironment.has_value()) {
-				createBuffer(bufferSizeNormalTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersNormalTransformsPools[pool][frame], uniformBuffersMemoryNormalTransformsPools[pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryNormalTransformsPools[pool][frame], 0, bufferSizeNormalTransforms, 0,
-					uniformBuffersMappedNormalTransformsPools[pool].data() + frame);
-				createBuffer(bufferSizeEnvironmentTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersEnvironmentTransformsPools[pool][frame], uniformBuffersMemoryEnvironmentTransformsPools[pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryEnvironmentTransformsPools[pool][frame], 0, bufferSizeEnvironmentTransforms, 0,
-					uniformBuffersMappedEnvironmentTransformsPools[pool].data() + frame);
-			}
-			createBuffer(bufferSizeCameras, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-				uniformBuffersCamerasPools[pool][frame], uniformBuffersMemoryCamerasPools[pool][frame], realloc);
-			vkMapMemory(device, uniformBuffersMemoryCamerasPools[pool][frame], 0, bufferSizeCameras, 0,
-				uniformBuffersMappedCamerasPools[pool].data() + frame);
-
-
-			if (lightPool.size() > 0) {
-				createBuffer(bufferSizeLights, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersLightsPools[pool][frame], uniformBuffersMemoryLightsPools[pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryLightsPools[pool][frame], 0, bufferSizeLights, 0,
-					uniformBuffersMappedLightsPools[pool].data() + frame);
-				createBuffer(bufferSizeLightTransforms, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-					uniformBuffersLightTransformsPools[pool][frame], uniformBuffersMemoryLightTransformsPools[pool][frame], realloc);
-				vkMapMemory(device, uniformBuffersMemoryLightTransformsPools[pool][frame], 0, bufferSizeLightTransforms, 0,
-					uniformBuffersMappedLightTransformsPools[pool].data() + frame);
-			}
-			createBuffer(bufferSizeMaterials, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
-				uniformBuffersMaterialsPools[pool][frame], uniformBuffersMemoryMaterialsPools[pool][frame], realloc);
-			vkMapMemory(device, uniformBuffersMemoryMaterialsPools[pool][frame], 0, bufferSizeMaterials, 0,
-				uniformBuffersMappedMaterialsPools[pool].data() + frame);
+				uniformBuffersLightTransformsPools[pool][frame], uniformBuffersMemoryLightTransformsPools[pool][frame], realloc);
+			vkMapMemory(device, uniformBuffersMemoryLightTransformsPools[pool][frame], 0, bufferSizeLightTransforms, 0,
+				uniformBuffersMappedLightTransformsPools[pool].data() + frame);
 		}
+		createBuffer(bufferSizeMaterials, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
+			uniformBuffersMaterialsPools[pool][frame], uniformBuffersMemoryMaterialsPools[pool][frame], realloc);
+		vkMapMemory(device, uniformBuffersMemoryMaterialsPools[pool][frame], 0, bufferSizeMaterials, 0,
+			uniformBuffersMappedMaterialsPools[pool].data() + frame);
 	}
 }
 
 
 void RTSystem::createDescriptorPool() {
-	size_t transformsSize = useVertexBuffer ?
-		transformPools.size() : 0;
-	transformsSize = useInstancing ?
-		transformsSize + transformInstPools.size() :
-		transformsSize;
-
-	descriptorPoolShadows.resize(lightPool.size());
-	for (int i = 0; i < lightPool.size(); i++) {
-		VkDescriptorPoolSize poolSizeShadow{};
-		poolSizeShadow.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		poolSizeShadow.descriptorCount = MAX_FRAMES_IN_FLIGHT * (transformsSize);
-		VkDescriptorPoolCreateInfo poolInfoShadow{};
-		poolInfoShadow.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolInfoShadow.poolSizeCount = 1;
-		poolInfoShadow.pPoolSizes = &poolSizeShadow;
-		poolInfoShadow.maxSets = (transformsSize)*MAX_FRAMES_IN_FLIGHT;
-		if (vkCreateDescriptorPool(device, &poolInfoShadow, nullptr, &descriptorPoolShadows[i])
-			!= VK_SUCCESS) {
-			throw std::runtime_error("ERROR: Unable to create a descriptor pool in Vulkan System.");
-		}
-	}
+	size_t transformsSize = transformPoolsMesh.size();
 
 	std::array<VkDescriptorPoolSize, 2> poolSizesHDR{};
 	poolSizesHDR[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -2179,11 +1800,7 @@ void RTSystem::createDescriptorPool() {
 
 void RTSystem::createDescriptorSets() {
 
-	size_t transformsSize = useVertexBuffer ?
-		transformPools.size() : 0;
-	transformsSize = useInstancing ?
-		transformsSize + transformInstPools.size() :
-		transformsSize;
+	size_t transformsSize = transformPoolsMesh.size();
 
 
 
@@ -2213,411 +1830,7 @@ void RTSystem::createDescriptorSets() {
 		throw std::runtime_error("ERROR: Unable to create descriptor sets in Vulkan System. Final.");
 	}
 
-	descriptorSetsShadows.resize(lightPool.size());
-	for (int i = 0; i < lightPool.size(); i++) {
-		std::vector<VkDescriptorSetLayout> layoutsShadow(MAX_FRAMES_IN_FLIGHT * transformsSize, descriptorSetLayouts[i]);
-		VkDescriptorSetAllocateInfo allocateInfoShadow{};
-		allocateInfoShadow.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocateInfoShadow.descriptorPool = descriptorPoolShadows[i];
-		allocateInfoShadow.descriptorSetCount = MAX_FRAMES_IN_FLIGHT * transformsSize;
-		allocateInfoShadow.pSetLayouts = layoutsShadow.data();
-		descriptorSetsShadows[i].resize(MAX_FRAMES_IN_FLIGHT * transformsSize);
-		if (vkAllocateDescriptorSets(device, &allocateInfoShadow, descriptorSetsShadows[i].data())
-			!= VK_SUCCESS) {
-			throw std::runtime_error("ERROR: Unable to create descriptor sets in Vulkan System. Shadow.");
-		}
-	}
-
 	size_t samplerSize = rawTextures.size() + rawCubes.size();
-
-	size_t pool = 0;
-	for (; pool < transformPools.size() && useVertexBuffer; pool++) {
-		for (int frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
-			size_t poolInd = pool * MAX_FRAMES_IN_FLIGHT + frame;
-			std::vector<VkWriteDescriptorSet> shadowWriteDescriptorSets =
-				std::vector<VkWriteDescriptorSet>(lightPool.size());
-
-			for (int i = 0; i < lightPool.size(); i++) {
-				//Shadow
-				VkDescriptorBufferInfo bufferInfoModels{};
-				bufferInfoModels.buffer = uniformBuffersModelsPools[i][pool][frame];
-				bufferInfoModels.offset = 0;
-				bufferInfoModels.range = sizeof(mat44<float>) * transformPools[pool].size();
-
-				shadowWriteDescriptorSets[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				shadowWriteDescriptorSets[i].dstSet = descriptorSetsShadows[i][poolInd];
-				shadowWriteDescriptorSets[i].dstBinding = 0;
-				shadowWriteDescriptorSets[i].dstArrayElement = 0;
-				shadowWriteDescriptorSets[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-				shadowWriteDescriptorSets[i].descriptorCount = 1;
-				shadowWriteDescriptorSets[i].pBufferInfo = &bufferInfoModels;
-				vkUpdateDescriptorSets(device, 1, &shadowWriteDescriptorSets[i], 0, nullptr);
-			}
-
-			//HDR
-			VkDescriptorBufferInfo bufferInfoTransforms{};
-			bufferInfoTransforms.buffer = uniformBuffersTransformsPools[pool][frame];
-			bufferInfoTransforms.offset = 0;
-			bufferInfoTransforms.range = sizeof(mat44<float>) * transformPools[pool].size();
-			VkDescriptorBufferInfo bufferInfoCameras{};
-			bufferInfoCameras.buffer = uniformBuffersCamerasPools[pool][frame];
-			bufferInfoCameras.offset = 0;
-			bufferInfoCameras.range = sizeof(mat44<float>);
-			VkDescriptorBufferInfo bufferInfoLights{};
-			bufferInfoLights.buffer = uniformBuffersLightsPools[pool][frame];
-			bufferInfoLights.offset = 0;
-			bufferInfoLights.range = sizeof(Light) * lightPool.size();
-			VkDescriptorBufferInfo bufferInfoLightTransforms{};
-			bufferInfoLightTransforms.buffer = uniformBuffersLightTransformsPools[pool][frame];
-			bufferInfoLightTransforms.offset = 0;
-			bufferInfoLightTransforms.range = sizeof(mat44<float>) * lightPool.size();
-			VkDescriptorBufferInfo bufferInfoLightPerspective{};
-			bufferInfoLightPerspective.buffer = uniformBuffersLightPerspectivePools[pool][frame];
-			bufferInfoLightPerspective.offset = 0;
-			bufferInfoLightPerspective.range = sizeof(mat44<float>) * lightPool.size();
-			VkDescriptorBufferInfo bufferInfoMaterials{};
-			bufferInfoMaterials.buffer = uniformBuffersMaterialsPools[pool][frame];
-			bufferInfoMaterials.offset = 0;
-			bufferInfoMaterials.range = sizeof(DrawMaterial) * materialPools[pool].size();
-			VkDescriptorBufferInfo bufferInfoNormTransforms{};
-			VkDescriptorBufferInfo bufferInfoEnvTransforms{};
-			if (rawEnvironment.has_value()) {
-				bufferInfoNormTransforms.buffer = uniformBuffersNormalTransformsPools[pool][frame];
-				bufferInfoNormTransforms.offset = 0;
-				bufferInfoNormTransforms.range = sizeof(mat44<float>) * transformNormalPools[pool].size();
-				bufferInfoEnvTransforms.buffer = uniformBuffersEnvironmentTransformsPools[pool][frame];
-				bufferInfoEnvTransforms.offset = 0;
-				bufferInfoEnvTransforms.range = sizeof(mat44<float>) * transformEnvironmentPools[pool].size();
-			}
-			std::vector<VkWriteDescriptorSet> writeDescriptorSets = rawEnvironment.has_value() ?
-				std::vector<VkWriteDescriptorSet>(10 + samplerSize) :
-				std::vector<VkWriteDescriptorSet>(7 + samplerSize);
-			writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[0].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[0].dstBinding = 0;
-			writeDescriptorSets[0].dstArrayElement = 0;
-			writeDescriptorSets[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[0].descriptorCount = 1;
-			writeDescriptorSets[0].pBufferInfo = &bufferInfoTransforms;
-			writeDescriptorSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[1].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[1].dstBinding = 1;
-			writeDescriptorSets[1].dstArrayElement = 0;
-			writeDescriptorSets[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[1].descriptorCount = 1;
-			writeDescriptorSets[1].pBufferInfo = &bufferInfoCameras;
-			writeDescriptorSets[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[2].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[2].dstBinding = 2;
-			writeDescriptorSets[2].dstArrayElement = 0;
-			writeDescriptorSets[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[2].descriptorCount = 1;
-			writeDescriptorSets[2].pBufferInfo = &bufferInfoMaterials;
-			writeDescriptorSets[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[3].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[3].dstBinding = 6;
-			writeDescriptorSets[3].dstArrayElement = 0;
-			writeDescriptorSets[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[3].descriptorCount = 1;
-			writeDescriptorSets[3].pBufferInfo = &bufferInfoLightTransforms;
-			writeDescriptorSets[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[4].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[4].dstBinding = 7;
-			writeDescriptorSets[4].dstArrayElement = 0;
-			writeDescriptorSets[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[4].descriptorCount = 1;
-			writeDescriptorSets[4].pBufferInfo = &bufferInfoLights;
-
-			VkDescriptorImageInfo imageInfoLUT{};
-			imageInfoLUT.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfoLUT.imageView = LUTImageView;
-			imageInfoLUT.sampler = LUTSampler;
-			writeDescriptorSets[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[5].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[5].dstBinding = 5;
-			writeDescriptorSets[5].dstArrayElement = 0;
-			writeDescriptorSets[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			writeDescriptorSets[5].descriptorCount = 1;
-			writeDescriptorSets[5].pImageInfo = &imageInfoLUT;
-
-
-			writeDescriptorSets[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[6].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[6].dstBinding = 9;
-			writeDescriptorSets[6].dstArrayElement = 0;
-			writeDescriptorSets[6].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[6].descriptorCount = 1;
-			writeDescriptorSets[6].pBufferInfo = &bufferInfoLightPerspective;
-
-			if (rawEnvironment.has_value()) {
-				writeDescriptorSets[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[7].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[7].dstBinding = 11;
-				writeDescriptorSets[7].dstArrayElement = 0;
-				writeDescriptorSets[7].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-				writeDescriptorSets[7].descriptorCount = 1;
-				writeDescriptorSets[7].pBufferInfo = &bufferInfoNormTransforms;
-				writeDescriptorSets[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[8].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[8].dstBinding = 12;
-				writeDescriptorSets[8].dstArrayElement = 0;
-				writeDescriptorSets[8].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-				writeDescriptorSets[8].descriptorCount = 1;
-				writeDescriptorSets[8].pBufferInfo = &bufferInfoEnvTransforms;
-			}
-
-			std::vector<VkDescriptorImageInfo> imageInfosTex = std::vector<VkDescriptorImageInfo>(rawTextures.size());
-			for (size_t tex = 0; tex < rawTextures.size(); tex++) {
-				size_t descSet = rawEnvironment.has_value() ? tex + 9 : tex + 7;
-				imageInfosTex[tex].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				imageInfosTex[tex].imageView = textureImageViews[tex];
-				imageInfosTex[tex].sampler = textureSamplers[tex];
-				writeDescriptorSets[descSet].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[descSet].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[descSet].dstBinding = 3;
-				writeDescriptorSets[descSet].dstArrayElement = tex;
-				writeDescriptorSets[descSet].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				writeDescriptorSets[descSet].descriptorCount = 1;
-				writeDescriptorSets[descSet].pImageInfo = &imageInfosTex[tex];
-			}
-			std::vector<VkDescriptorImageInfo> imageInfosCube = std::vector<VkDescriptorImageInfo>(rawCubes.size());
-			for (size_t cube = 0; cube < rawCubes.size(); cube++) {
-				size_t descSet = rawEnvironment.has_value() ? cube + 9 : cube + 7;
-				descSet += rawTextures.size();
-				imageInfosCube[cube].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				imageInfosCube[cube].imageView = cubeImageViews[cube];
-				imageInfosCube[cube].sampler = cubeSamplers[cube];
-				writeDescriptorSets[descSet].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[descSet].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[descSet].dstBinding = 4;
-				writeDescriptorSets[descSet].dstArrayElement = cube;
-				writeDescriptorSets[descSet].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				writeDescriptorSets[descSet].descriptorCount = 1;
-				writeDescriptorSets[descSet].pImageInfo = &imageInfosCube[cube];
-			}
-
-			if (rawEnvironment.has_value()) {
-				VkDescriptorImageInfo imageInfoEnv;
-				size_t descSet = samplerSize + 9;
-				imageInfoEnv.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				imageInfoEnv.imageView = environmentImageView;
-				imageInfoEnv.sampler = environmentSampler;
-				writeDescriptorSets[descSet].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[descSet].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[descSet].dstBinding = 10;
-				writeDescriptorSets[descSet].dstArrayElement = 0;
-				writeDescriptorSets[descSet].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				writeDescriptorSets[descSet].descriptorCount = 1;
-				writeDescriptorSets[descSet].pImageInfo = &imageInfoEnv;
-			}
-
-			vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
-		}
-	}
-	for (; useInstancing && pool < transformPools.size() + transformInstPoolsStore.size(); pool++) {
-		for (int frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
-			size_t poolInd = pool * MAX_FRAMES_IN_FLIGHT + frame;
-
-
-
-			for (int i = 0; i < lightPool.size(); i++) {
-
-				//Shadow
-				VkDescriptorBufferInfo bufferInfoModels{};
-				bufferInfoModels.buffer = uniformBuffersModelsPools[i][pool][frame];
-				bufferInfoModels.offset = 0;
-				bufferInfoModels.range = sizeof(mat44<float>) * transformInstPoolsStore[pool - transformPools.size()].size();
-
-				VkWriteDescriptorSet shadowWriteDescriptorSet{};
-				shadowWriteDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				shadowWriteDescriptorSet.dstSet = descriptorSetsShadows[i][poolInd];
-				shadowWriteDescriptorSet.dstBinding = 0;
-				shadowWriteDescriptorSet.dstArrayElement = 0;
-				shadowWriteDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-				shadowWriteDescriptorSet.descriptorCount = 1;
-				shadowWriteDescriptorSet.pBufferInfo = &bufferInfoModels;
-				vkUpdateDescriptorSets(device, 1, &shadowWriteDescriptorSet, 0, nullptr);
-			}
-
-
-			VkDescriptorBufferInfo bufferInfoLightPerspective{};
-			bufferInfoLightPerspective.buffer = uniformBuffersLightPerspectivePools[pool][frame];
-			bufferInfoLightPerspective.offset = 0;
-			bufferInfoLightPerspective.range = sizeof(mat44<float>) * lightPool.size();
-			VkDescriptorBufferInfo bufferInfoTransforms{};
-			bufferInfoTransforms.buffer = uniformBuffersTransformsPools[pool][frame];
-			bufferInfoTransforms.offset = 0;
-			bufferInfoTransforms.range = sizeof(mat44<float>) * transformInstPoolsStore[pool - transformPools.size()].size();
-			VkDescriptorBufferInfo bufferInfoCameras{};
-			bufferInfoCameras.buffer = uniformBuffersCamerasPools[pool][frame];
-			bufferInfoCameras.offset = 0;
-			bufferInfoCameras.range = sizeof(mat44<float>);
-			VkDescriptorBufferInfo bufferInfoLights{};
-			bufferInfoLights.buffer = uniformBuffersLightsPools[pool][frame];
-			bufferInfoLights.offset = 0;
-			bufferInfoLights.range = sizeof(Light) * lightPool.size();
-			VkDescriptorBufferInfo bufferInfoLightTransforms{};
-			bufferInfoLightTransforms.buffer = uniformBuffersLightTransformsPools[pool][frame];
-			bufferInfoLightTransforms.offset = 0;
-			bufferInfoLightTransforms.range = sizeof(mat44<float>) * lightPool.size();
-			VkDescriptorBufferInfo bufferInfoMaterials{};
-			bufferInfoMaterials.buffer = uniformBuffersMaterialsPools[pool][frame];
-			bufferInfoMaterials.offset = 0;
-			bufferInfoMaterials.range = sizeof(DrawMaterial);
-			VkDescriptorBufferInfo bufferInfoNormTransforms{};
-			VkDescriptorBufferInfo bufferInfoEnvTransforms{};
-			if (rawEnvironment.has_value()) {
-				bufferInfoNormTransforms.buffer = uniformBuffersNormalTransformsPools[pool][frame];
-				bufferInfoNormTransforms.offset = 0;
-				bufferInfoNormTransforms.range = sizeof(mat44<float>) * transformNormalPools[pool].size();
-				bufferInfoEnvTransforms.buffer = uniformBuffersEnvironmentTransformsPools[pool][frame];
-				bufferInfoEnvTransforms.offset = 0;
-				bufferInfoEnvTransforms.range = sizeof(mat44<float>) * transformEnvironmentInstPoolsStore[pool - transformPools.size()].size();
-			}
-			std::vector<VkWriteDescriptorSet> writeDescriptorSets = rawEnvironment.has_value() ?
-				std::vector<VkWriteDescriptorSet>(10 + samplerSize) :
-				std::vector<VkWriteDescriptorSet>(7 + samplerSize);
-
-			writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[0].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[0].dstBinding = 0;
-			writeDescriptorSets[0].dstArrayElement = 0;
-			writeDescriptorSets[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[0].descriptorCount = 1;
-			writeDescriptorSets[0].pBufferInfo = &bufferInfoTransforms;
-			writeDescriptorSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[1].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[1].dstBinding = 1;
-			writeDescriptorSets[1].dstArrayElement = 0;
-			writeDescriptorSets[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[1].descriptorCount = 1;
-			writeDescriptorSets[1].pBufferInfo = &bufferInfoCameras;
-			writeDescriptorSets[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[2].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[2].dstBinding = 2;
-			writeDescriptorSets[2].dstArrayElement = 0;
-			writeDescriptorSets[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[2].descriptorCount = 1;
-			writeDescriptorSets[2].pBufferInfo = &bufferInfoMaterials;
-			writeDescriptorSets[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[3].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[3].dstBinding = 6;
-			writeDescriptorSets[3].dstArrayElement = 0;
-			writeDescriptorSets[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[3].descriptorCount = 1;
-			writeDescriptorSets[3].pBufferInfo = &bufferInfoLightTransforms;
-			writeDescriptorSets[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[4].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[4].dstBinding = 7;
-			writeDescriptorSets[4].dstArrayElement = 0;
-			writeDescriptorSets[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[4].descriptorCount = 1;
-			writeDescriptorSets[4].pBufferInfo = &bufferInfoLights;
-
-			VkDescriptorImageInfo imageInfoLUT{};
-			imageInfoLUT.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfoLUT.imageView = LUTImageView;
-			imageInfoLUT.sampler = LUTSampler;
-			writeDescriptorSets[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[5].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[5].dstBinding = 5;
-			writeDescriptorSets[5].dstArrayElement = 0;
-			writeDescriptorSets[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			writeDescriptorSets[5].descriptorCount = 1;
-			writeDescriptorSets[5].pImageInfo = &imageInfoLUT;
-
-			writeDescriptorSets[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[6].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[6].dstBinding = 9;
-			writeDescriptorSets[6].dstArrayElement = 0;
-			writeDescriptorSets[6].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			writeDescriptorSets[6].descriptorCount = 1;
-			writeDescriptorSets[6].pBufferInfo = &bufferInfoLightPerspective;
-
-			if (rawEnvironment.has_value()) {
-				writeDescriptorSets[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[7].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[7].dstBinding = 11;
-				writeDescriptorSets[7].dstArrayElement = 0;
-				writeDescriptorSets[7].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-				writeDescriptorSets[7].descriptorCount = 1;
-				writeDescriptorSets[7].pBufferInfo = &bufferInfoNormTransforms;
-				writeDescriptorSets[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[8].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[8].dstBinding = 12;
-				writeDescriptorSets[8].dstArrayElement = 0;
-				writeDescriptorSets[8].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-				writeDescriptorSets[8].descriptorCount = 1;
-				writeDescriptorSets[8].pBufferInfo = &bufferInfoEnvTransforms;
-			}
-
-			std::vector<VkDescriptorImageInfo> imageInfosTex = std::vector<VkDescriptorImageInfo>(rawTextures.size());
-			for (size_t tex = 0; tex < rawTextures.size(); tex++) {
-				size_t descSet = rawEnvironment.has_value() ? tex + 9 : tex + 7;
-				imageInfosTex[tex].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				imageInfosTex[tex].imageView = textureImageViews[tex];
-				imageInfosTex[tex].sampler = textureSamplers[tex];
-				writeDescriptorSets[descSet].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[descSet].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[descSet].dstBinding = 3;
-				writeDescriptorSets[descSet].dstArrayElement = tex;
-				writeDescriptorSets[descSet].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				writeDescriptorSets[descSet].descriptorCount = 1;
-				writeDescriptorSets[descSet].pImageInfo = &imageInfosTex[tex];
-			}
-
-			std::vector<VkDescriptorImageInfo> imageInfosCube = std::vector<VkDescriptorImageInfo>(rawCubes.size());
-			for (size_t cube = 0; cube < rawCubes.size(); cube++) {
-				size_t descSet = rawEnvironment.has_value() ? cube + 9 : cube + 7;
-				descSet += rawTextures.size();
-				imageInfosCube[cube].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				imageInfosCube[cube].imageView = cubeImageViews[cube];
-				imageInfosCube[cube].sampler = cubeSamplers[cube];
-				writeDescriptorSets[descSet].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[descSet].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[descSet].dstBinding = 4;
-				writeDescriptorSets[descSet].dstArrayElement = cube;
-				writeDescriptorSets[descSet].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				writeDescriptorSets[descSet].descriptorCount = 1;
-				writeDescriptorSets[descSet].pImageInfo = &imageInfosCube[cube];
-			}
-
-
-
-			if (rawEnvironment.has_value()) {
-				VkDescriptorImageInfo imageInfoEnv;
-				size_t descSet = samplerSize + 9;
-				imageInfoEnv.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				imageInfoEnv.imageView = environmentImageView;
-				imageInfoEnv.sampler = environmentSampler;
-				writeDescriptorSets[descSet].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				writeDescriptorSets[descSet].dstSet = descriptorSetsHDR[poolInd];
-				writeDescriptorSets[descSet].dstBinding = 10;
-				writeDescriptorSets[descSet].dstArrayElement = 0;
-				writeDescriptorSets[descSet].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				writeDescriptorSets[descSet].descriptorCount = 1;
-				writeDescriptorSets[descSet].pImageInfo = &imageInfoEnv;
-			}
-			vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
-		}
-	}
-
-	for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
-		VkDescriptorImageInfo finalDescriptor{};
-		finalDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		finalDescriptor.imageView = attachmentImageViews[frame];
-		finalDescriptor.sampler = VK_NULL_HANDLE;
-
-		VkWriteDescriptorSet writeDescriptorSet{};
-		writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		writeDescriptorSet.dstSet = descriptorSetsFinal[frame];
-		writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		writeDescriptorSet.descriptorCount = 1;
-		writeDescriptorSet.dstBinding = 0;
-		writeDescriptorSet.pImageInfo = &finalDescriptor;
-		writeDescriptorSet.dstArrayElement = 0;
-		vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
-	}
 }
 
 void RTSystem::createCommands() {
@@ -2685,129 +1898,9 @@ void RTSystem::createDepthResources() {
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory);
 	depthImageView = createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
 	VkFormat shadowDepthFormat = VK_FORMAT_D16_UNORM;
-	shadowDepthImages.resize(lightPool.size());
-	shadowDepthImageViews.resize(lightPool.size());
-	shadowDepthImageMemorys.resize(lightPool.size());
-	for (int i = 0; i < lightPool.size(); i++) {
-		size_t shadowRes = lightPool[i].shadowRes;
-		if (shadowRes == 0) shadowRes = 1;
-		createImage(shadowRes, shadowRes, shadowDepthFormat,
-			VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, 0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, shadowDepthImages[i], shadowDepthImageMemorys[i]);
-		shadowDepthImageViews[i] = createImageView(shadowDepthImages[i], shadowDepthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-	}
 }
 
-void RTSystem::recordCommandBufferShadow(VkCommandBuffer commandBuffer, uint32_t imageIndex, int lightIndex) {
-	VkCommandBufferBeginInfo beginInfo{};
-	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-		throw std::runtime_error("ERROR: Unable to begin recording a command buffer in RTSystem.");
-	}
-
-
-
-	VkExtent2D shadowExtent;
-	size_t shadowRes = lightPool[lightIndex].shadowRes;
-	if (shadowRes == 0) shadowRes = 1;
-	shadowExtent.width = shadowRes;
-	shadowExtent.height = shadowRes;
-
-
-	//Begin preparing command buffer render pass
-	VkRenderPassBeginInfo renderPassInfo{};
-	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	renderPassInfo.renderPass = shadowPasses[lightIndex];
-	renderPassInfo.framebuffer = shadowFramebuffers[lightIndex][imageIndex];
-	renderPassInfo.renderArea.offset = { 0,0 };
-	renderPassInfo.renderArea.extent = shadowExtent;
-	std::vector<VkClearValue> clearColors;
-	clearColors.push_back({ {1.0f,1.0,1.0,0} });
-	clearColors.push_back({ {1.0f,0} });
-
-	renderPassInfo.clearValueCount = clearColors.size();
-	renderPassInfo.pClearValues = clearColors.data();
-	vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-	VkViewport viewport{};
-	VkRect2D scissor{};
-	//Viewport and Scissor are dyanmic, so set now
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = static_cast<float>(shadowRes);
-	viewport.height = static_cast<float>(shadowRes);
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-	scissor.offset = { 0, 0 };
-	scissor.extent = shadowExtent;
-	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-	//Shadow subpass;
-	{
-		vkCmdPushConstants(commandBuffer, pipelineLayoutShadows[lightIndex], VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mat44<float>), &worldTolightPerspPool[lightIndex]);
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipelineShadows[lightIndex]);
-		const VkDeviceSize offsets[] = { 0 };
-		if (useVertexBuffer) vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
-		for (size_t pool = 0; pool < transformPools.size() && pool < indexBuffersValid.size() && useVertexBuffer; pool++) {
-			if (indexBuffersValid[pool]) {
-				vkCmdBindIndexBuffer(commandBuffer, indexBuffers[pool], 0, VK_INDEX_TYPE_UINT32);
-				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-					pipelineLayoutShadows[lightIndex], 0, 1, &descriptorSetsShadows[lightIndex][pool * MAX_FRAMES_IN_FLIGHT + currentFrame], 0, nullptr);
-				vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indexPools[pool].size()), 1, 0, 0, 0);
-			}
-		}
-
-	}
-	//Instanced version
-	if (useInstancing) {
-		vkCmdPushConstants(commandBuffer, pipelineLayoutShadows[lightIndex], VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(mat44<float>), &worldTolightPerspPool[lightIndex]);
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsInstPipelineShadows[lightIndex]);
-		const VkDeviceSize offsets[] = { 0 };
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexInstBuffer, offsets);
-		for (size_t pool = 0; pool < transformInstPools.size(); pool++) {
-			if (transformInstPools[pool].size() == 0) continue;
-			vkCmdBindIndexBuffer(commandBuffer, indexInstBuffers[transformInstIndexPools[pool]], 0, VK_INDEX_TYPE_UINT32);
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-				pipelineLayoutShadows[lightIndex], 0, 1, &descriptorSetsShadows[lightIndex][(pool + transformPools.size()) *
-				MAX_FRAMES_IN_FLIGHT + currentFrame], 0, nullptr);
-			vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(
-				indexInstPools[transformInstIndexPools[pool]].size()),
-				transformInstPools[pool].size(), 0, 0, 0);
-		}
-
-	}
-	//END render pass
-	vkCmdEndRenderPass(commandBuffer);
-
-	VkImageMemoryBarrier barrier{};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.image = shadowDepthImages[lightIndex];
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
-	barrier.subresourceRange.levelCount = 1;
-	barrier.subresourceRange.baseMipLevel = 0;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-	vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-		VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1,
-		&barrier);
-
-
-
-	if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-		throw std::runtime_error("ERROR: Unable to record command buffer in RTSystem.");
-	}
-
-
-}
-
-void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {/*
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
@@ -2901,15 +1994,14 @@ void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t i
 		throw std::runtime_error("ERROR: Unable to record command buffer in RTSystem.");
 	}
 
-
+	*/
 }
 
 
 
 void RTSystem::updateUniformBuffers(uint32_t frame) {
 
-
-	cullInstances();
+	/*
 	//Guided by glm implementation of lookAt
 	float_3 useMoveVec = movementMode == MOVE_DEBUG ? debugMoveVec : moveVec;
 	float_3 useDirVec = movementMode == MOVE_DEBUG ? debugDirVec : dirVec;
@@ -2981,12 +2073,12 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 			sizeof(mat44<float>) * worldTolightPool.size());
 		memcpy(uniformBuffersMappedMaterialsPools[pool][frame],
 			&instancedMaterials[poolAdjusted], matsize);
-	}
+	}*/
 }
 
 
 void RTSystem::drawFrame() {
-
+	/*
 
 
 	VkResult result;
@@ -3133,7 +2225,7 @@ void RTSystem::drawFrame() {
 	if (!renderToWindow) {
 		headlessFrames++;
 		std::cout << "Frames rendered: " << headlessFrames << std::endl;
-	}
+	}*/
 }
 
 

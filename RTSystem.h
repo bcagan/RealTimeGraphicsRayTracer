@@ -22,7 +22,6 @@ public:
 
 	//main loop
 	void drawFrame();
-	void runDrivers(float frameTime, SceneGraph* sceneGraphP, bool loop = false);
 	void idle() {
 		vkDeviceWaitIdle(device);
 	};
@@ -54,32 +53,22 @@ public:
 
 	//Vertex shader
 	std::vector<Vertex> vertices;
-	std::vector<Vertex> verticesInst;
-	std::vector<std::vector<uint32_t>> indexPoolsStore;
-	std::vector<std::vector<uint32_t>> indexPools;
-	std::vector<std::vector<uint32_t>> indexInstPools;
-	std::vector<std::vector<mat44<float>>> transformPools;
-	std::vector<std::vector<mat44<float>>> transformInstPools;
-	std::vector<std::vector<mat44<float>>> transformInstPoolsStore;
-	std::vector<std::vector<mat44<float>>> transformNormalPools;
-	std::vector<std::vector<mat44<float>>> transformNormalInstPools;
-	std::vector<std::vector<mat44<float>>> transformNormalInstPoolsStore;
-	std::vector<std::vector<mat44<float>>> transformEnvironmentPools;
-	std::vector<std::vector<mat44<float>>> transformEnvironmentInstPools;
-	std::vector<std::vector<mat44<float>>> transformEnvironmentInstPoolsStore;
-	std::vector<int> transformInstIndexPools;
+	std::vector<std::vector<uint32_t>> indexPoolsMesh;
+	std::vector<mat44<float>> transformPoolsMesh;
+	std::vector<mat44<float>> transformNormalPoolsMesh;
+	std::vector<mat44<float>> transformEnvironmentPoolsMesh;
+	std::vector<std::pair<uint32_t, uint32_t>> meshMinMax;
 	//Materials and Lights
 	std::vector<DrawLight> lightPool;
 	std::vector<mat44<float>> worldTolightPool;
 	std::vector<mat44<float>> worldTolightPerspPool;
 	std::optional<Texture> rawEnvironment;
 	Texture LUT;
-	std::vector<std::vector<DrawMaterial>> materialPools;
-	std::vector<DrawMaterial> instancedMaterials;
+	std::vector<DrawMaterial> meshMaterials;
 	Texture defaultShadowTex;
 	//Animation and culling
 	std::vector<std::vector<DrawNode>> drawPools;
-	std::vector<std::pair<float_3, float>> boundingSpheresInst;
+	std::vector<std::pair<float_3, float>> boundingSpheresMesh;
 	std::vector<Driver> nodeDrivers;
 	std::vector<Driver> cameraDrivers;
 	//Cameras
@@ -103,6 +92,9 @@ private:
 		VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
 		VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D, int levels = 1);
 	void createImageViews();
+	void createBLAccelereationStructures();
+	void createTLAccelereationStructures();
+	void createAccelereationStructures();
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline(std::string vertShader, std::string fragShader, VkPipeline& pipeline, VkPipelineLayout& layout, int subpass, VkRenderPass inRenderPass);
 	void createGraphicsPipelines();
@@ -116,9 +108,8 @@ private:
 		VkMemoryPropertyFlags properties, VkBuffer& buffer,
 		VkDeviceMemory& bufferMemory, bool realloc);
 	void createVertexBuffer(bool realloc = true);
+	void createTransformBuffers(bool realloc = true);
 	mat44<float> getCameraSpace(DrawCamera camera, float_3 useMoveVec, float_3 useDirVec);
-	void cullInstances();
-	void cullIndexPools();
 	void transitionImageLayout(VkImage image, VkFormat format,
 		VkImageLayout oldLayout, VkImageLayout newLayout, int layers = 1, int levels = 1);
 	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, int level = 0, int face = 0);
@@ -134,7 +125,6 @@ private:
 	void createDepthResources();
 	void createDescriptorSets();
 	void createCommands();
-	void recordCommandBufferShadow(VkCommandBuffer commandBuffer, uint32_t imageIndex, int lightIndex);
 	void recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void submitFrame(size_t frameIndex, uint32_t imageIndex, bool draw);
 	void updateUniformBuffers(uint32_t frame);
@@ -173,49 +163,34 @@ private:
 	//Pipeline
 	std::vector<VkDeviceMemory> attachmentMemorys;
 	std::vector<VkImageView> attachmentImageViews;
-	std::vector< std::vector<VkDeviceMemory>> shadowMemorys;
-	std::vector< std::vector<VkImageView>> shadowImageViews;
-	VkPipelineLayout pipelineLayoutHDR;
+	VkPipelineLayout pipelineLayoutRT;
 	VkPipelineLayout pipelineLayoutFinal;
-	std::vector<VkPipelineLayout> pipelineLayoutShadows;
-	VkPipeline graphicsPipeline;
-	VkPipeline graphicsInstPipeline;
+	VkPipeline graphicsPipelineRT;
 	VkPipeline graphicsPipelineFinal;
-	std::vector<VkPipeline> graphicsPipelineShadows;
-	std::vector<VkPipeline> graphicsInstPipelineShadows;
 	//Rendering
 	VkQueue graphicsQueue;
 	VkQueue presentQueue;
 	VkSwapchainKHR swapChain;
 	std::vector<VkImage> swapChainImages;
 	std::vector<VkImage> attachmentImages;
-	std::vector<std::vector<VkImage>> shadowImages;
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
 	std::vector<VkImageView> swapChainImageViews;
-	std::vector<VkRenderPass> shadowPasses;
 	VkRenderPass renderPass;
 	std::vector<VkFramebuffer> swapChainFramebuffers;
-	std::vector<std::vector<VkFramebuffer>> shadowFramebuffers;
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 	VkImage depthImage;
 	VkDeviceMemory depthImageMemory;
 	VkImageView depthImageView;
-	std::vector<VkImage> shadowDepthImages;
-	std::vector<VkDeviceMemory> shadowDepthImageMemorys;
-	std::vector<VkImageView> shadowDepthImageViews;
 	//Vertices
 	VkBuffer vertexBuffer;
 	bool useVertexBuffer;
 	VkDeviceMemory vertexBufferMemory;
-	std::vector<VkBuffer> indexBuffers;
-	std::vector<bool> indexBuffersValid;
-	std::vector<VkDeviceMemory> indexBufferMemorys;
-	VkBuffer vertexInstBuffer;
-	VkDeviceMemory vertexInstBufferMemory;
-	std::vector<VkBuffer> indexInstBuffers;
-	std::vector<VkDeviceMemory> indexInstBufferMemorys;
+	std::vector<VkBuffer> meshIndexBuffers;
+	std::vector<VkDeviceMemory> meshIndexBufferMemorys;
+	std::vector<VkBuffer> meshTransformBuffers;
+	std::vector<VkDeviceMemory> meshTransformMemorys;
 	//Images
 	bool initialFrame = true;
 	std::vector<Texture> rawTextures;
@@ -224,7 +199,6 @@ private:
 	std::vector<VkDeviceMemory> textureImageMemorys;
 	std::vector<VkImageView> textureImageViews;
 	std::vector<VkSampler> textureSamplers;
-	std::vector<std::vector<VkSampler >> shadowSamplers;
 	std::vector<VkImage> cubeImages;
 	std::vector<VkDeviceMemory> cubeImageMemorys;
 	std::vector<VkImageView> cubeImageViews;
@@ -237,19 +211,7 @@ private:
 	VkDeviceMemory LUTImageMemory;
 	VkImageView LUTImageView;
 	VkSampler LUTSampler;
-	VkImage defaultShadowImage;
-	VkDeviceMemory defaultShadowImageMemory;
-	VkImageView defaultShadowImageView;
-	VkSampler defaultShadowSampler;
 	//Uniforms
-	std::vector<std::vector<VkBuffer>> uniformBuffersTransformsPools;
-	std::vector<std::vector<VkDeviceMemory>> uniformBuffersMemoryTransformsPools;
-	std::vector<std::vector<void*>> uniformBuffersMappedTransformsPools;
-
-
-	std::vector<std::vector<std::vector<VkBuffer>>> uniformBuffersModelsPools;
-	std::vector < std::vector<std::vector<VkDeviceMemory>>> uniformBuffersMemoryModelsPools;
-	std::vector < std::vector<std::vector<void*>>> uniformBuffersMappedModelsPools;
 
 	std::vector<std::vector<VkBuffer>> uniformBuffersEnvironmentTransformsPools;
 	std::vector<std::vector<VkDeviceMemory>> uniformBuffersMemoryEnvironmentTransformsPools;
@@ -275,12 +237,6 @@ private:
 	std::vector< std::vector<VkDeviceMemory >> uniformBuffersMemoryLightPerspectivePools;
 	std::vector< std::vector<void*>> uniformBuffersMappedLightPerspectivePools;
 
-	/*
-	std::vector< std::vector<VkBuffer>> uniformBuffersLightPerspectivePools;
-	std::vector< std::vector<VkDeviceMemory >> uniformBuffersMemoryLightPerspectivePools;
-	std::vector< std::vector<void*>> uniformBuffersMappedLightPerspectivePools;
-	*/
-
 	std::vector< std::vector<VkBuffer>> uniformBuffersMaterialsPools;
 	std::vector< std::vector<VkDeviceMemory >> uniformBuffersMemoryMaterialsPools;
 	std::vector< std::vector<void*>> uniformBuffersMappedMaterialsPools;
@@ -288,8 +244,6 @@ private:
 	std::vector<VkDescriptorSet> descriptorSetsHDR;
 	VkDescriptorPool descriptorPoolFinal;
 	std::vector<VkDescriptorSet> descriptorSetsFinal;
-	std::vector<VkDescriptorPool> descriptorPoolShadows;
-	std::vector<std::vector<VkDescriptorSet>> descriptorSetsShadows;
 	std::vector < VkDescriptorSetLayout> descriptorSetLayouts;
 
 	//Camera

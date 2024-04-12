@@ -226,8 +226,9 @@ int Mode::modeMain() {
 	//Parse and initialize user requested .s72 scene graph file
 	Parser parser;
 	SceneGraph graph = parser.parseJson(sceneName, verbose);
+	
 
-	graph.useInstancing = useInstancing;
+	graph.drawType = useRT ? DRAW_MESH : ( useInstancing ? DRAW_INSTANCED : DRAW_STANDARD);
 	Texture lut = Texture::parseTexture("Textures/LUT.png", false);
 	vulkanSystem.LUT = lut;
 	rtSystem.LUT = lut;

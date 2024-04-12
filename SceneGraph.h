@@ -299,6 +299,7 @@ class DrawListIntermediate
 public:
 	std::vector<Vertex> vertexPool;
 	std::vector<uint32_t> indexPool;
+	std::vector<std::vector<uint32_t>> meshIndexPools;
 	std::vector<DrawNode> drawPool;
 	std::vector<DrawCamera> cameras;
 	std::vector<mat44<float>> transforms;
@@ -312,6 +313,10 @@ public:
 	std::vector<Texture> cubeMaps;
 	std::optional<Texture> environmentMap;
 	std::vector<Light> lights;
+};
+
+enum DRAW_TYPE {
+	DRAW_STANDARD, DRAW_INSTANCED, DRAW_MESH
 };
 
 //All the finalized processed data structures resulting from graph navigation
@@ -331,23 +336,30 @@ class DrawList
 public:
 	std::vector<Vertex> vertexPool;
 	std::vector<Vertex> instancedVertexPool;
+	std::vector<std::pair<uint32_t, uint32_t>> meshMinMaxVerts;
 	std::vector<std::vector<uint32_t>> indexPools;
 	std::vector<std::vector<uint32_t>> instancedIndexPools;
+	std::vector<std::vector<uint32_t>> meshIndexPools;
 	std::vector<std::pair<float_3, float>> instancedBoundingSpheres;
+	std::vector<std::pair<float_3, float>> meshBoundingSpheres;
 	std::vector<std::vector<DrawNode>> drawPools;
 	std::vector<DrawCamera> cameras;
 	std::vector<std::vector<mat44<float>>> transformPools;
 	std::vector<std::vector<mat44<float>>> normalTransformPools;
+	std::vector<std::vector<mat44<float>>> environmentTransformPools;
 	std::vector<std::vector<mat44<float>>> instancedTransformPools;
 	std::vector<std::vector<mat44<float>>> instancedNormalTransformPools;
-	std::vector<std::vector<mat44<float>>> environmentTransformPools;
 	std::vector<std::vector<mat44<float>>> instancedEnvironmentTransformPools;
+	std::vector<mat44<float>> meshTransformPools;
+	std::vector<mat44<float>> meshNormalTransformPools;
+	std::vector<mat44<float>> meshEnvironmentTransformPools;
 	std::vector<std::vector<DrawMaterial>> materialPools;
 	std::vector<DrawMaterial> instancedMaterials;
+	std::vector<DrawMaterial> meshMaterials;
 	std::vector<int> instancedTransformIndexPools;
 	std::vector<Driver> nodeDrivers;
 	std::vector<Driver> cameraDrivers;
-	bool useInstancing;
+	DRAW_TYPE drawType;
 	std::vector<Texture> textureMaps;
 	std::vector<Texture> cubeMaps;
 	std::optional<Texture> environmentMap;
@@ -408,7 +420,7 @@ struct SceneVertex {
 class SceneGraph
 {
 public:
-	bool useInstancing;
+	DRAW_TYPE drawType;
 	DrawListIntermediate navigateSceneGraphInt(int instanceSize = 0);
 	DrawList navigateSceneGraph(bool verbose = false, int poolSize = MAX_POOL);
 	void navigateSceneGraphMeshes(std::vector<bool>& encountered, int node);
@@ -432,6 +444,7 @@ public:
 		std::vector<Driver>& cameraDrivers,
 		std::vector < std::vector<mat44<float>>>& instancedTransforms,
 		std::vector<std::vector<mat44<float>>>& instancedNormalTransforms,
+		std::vector<std::vector<uint32_t>> meshIndices,
 		std::vector<DrawNode>& drawNodes
 	);
 	std::vector<Texture> textureMaps;
