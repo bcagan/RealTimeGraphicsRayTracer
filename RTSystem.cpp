@@ -75,18 +75,19 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 	createSwapChain();
 	createAttachments();
 	createImageViews();
-
+	createCommands();
 	createVertexBuffer();
 	createIndexBuffers();
 	createTransformBuffers();
 	createAccelereationStructures();
-	
+
 	createDescriptorSetLayout();
-	createDepthResources();/*
+	createDepthResources();
+	
+	/*
 	createRenderPasses();
 	createGraphicsPipelines();
 	createFramebuffers();
-	createCommands();
 	createTextureImages();
 	createUniformBuffers();
 	createDescriptorPool();
@@ -638,15 +639,97 @@ void RTSystem::createImageViews() {
 	}
 }
 
+void RTSystem::AS::create(VkAccelerationStructureCreateInfoKHR createInfo) {
+	createInfo.buffer = buf;
+}
 
-void RTSystem::createBLAccelereationStructures() {
-	size_t meshes = meshIndexBuffers.size();
+void RTSystem::createBLAccelereationStructure(
+	std::vector<uint32_t> meshIndicies,
+	std::vector<BuildData> buildData,
+	VkDeviceAddress scratchAddress,
+	VkQueryPool queryPool) {
+	if (queryPool) {
+		vkResetQueryPool(device, queryPool, 0, static_cast<uint32_t>(meshIndicies.size()));
+	}
+	uint32_t queryCount{ 0 };
+
+	VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+	for (const uint32_t& idx : meshIndicies) {
+		VkAccelerationStructureCreateInfoKHR createInfo;
+		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		createInfo.size = buildData[idx].sizeInfo.accelerationStructureSize;
+		blas[idx].create(createInfo);
+		buildData[idx].buildInfo.dstAccelerationStructure = blas[idx].acc;
+		buildData[idx].buildInfo.scratchData.deviceAddress = scratchAddress;
+		vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1,
+			&buildData[idx].buildInfo, &buildData[idx].rangeInfo);
+	
+		VkMemoryBarrier barrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+		barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+		barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
+		vkCmdPipelineBarrier(commandBuffer,
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 
+			VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR, 
+			0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+		if (queryPool) {
+			vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer, 1,
+				&buildData[idx].buildInfo.dstAccelerationStructure,
+				VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool,
+				queryCount++);
+		}
+	}
+
+	endSingleTimeCommands(commandBuffer);
+
+}
+
+void RTSystem::compactBLAccelereationStructure(
+	std::vector<uint32_t> meshIndicies,
+	std::vector<BuildData> buildData,
+	VkQueryPool queryPool,
+	std::vector<AS>& cleanupAs) {
+	std::vector<VkDeviceSize> compactSizes(meshIndicies.size());
+	vkGetQueryPoolResults(device, queryPool, 0, compactSizes.size(),
+		compactSizes.size() * sizeof(VkDeviceSize), compactSizes.data(), 
+		sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
+	size_t queryCount = 0;
+
+	for (uint32_t idx : meshIndicies) {
+		cleanupAs.push_back(blas[idx]);
+		buildData[idx].sizeInfo.accelerationStructureSize = compactSizes[queryCount++];
+		VkAccelerationStructureCreateInfoKHR createInfo;
+		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		createInfo.size = buildData[idx].sizeInfo.accelerationStructureSize;
+		blas[idx].create(createInfo);
+		
+		VkCopyAccelerationStructureInfoKHR copyInfo{ VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR };
+		copyInfo.src = buildData[idx].buildInfo.dstAccelerationStructure;
+		copyInfo.dst = blas[idx].acc;
+		copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
+		VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+		vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
+		endSingleTimeCommands(commandBuffer);
+		
+	}
+}
+
+void RTSystem::createBLAccelereationStructures(uint32_t flags) {
+	size_t numMeshes = meshIndexBuffers.size();
+	//For geometry
 	std::vector< VkAccelerationStructureGeometryKHR> geometries =
-		std::vector< VkAccelerationStructureGeometryKHR>(meshes);
+		std::vector< VkAccelerationStructureGeometryKHR>(numMeshes);
 	std::vector<VkAccelerationStructureBuildRangeInfoKHR> offsets =
-		std::vector< VkAccelerationStructureBuildRangeInfoKHR>(meshes);
+		std::vector< VkAccelerationStructureBuildRangeInfoKHR>(numMeshes);
+
+	//For build
+	VkDeviceSize accStructTotalSize = { 0 };
+	VkDeviceSize maxScratchSize = { 0 };
+	uint32_t blasToCompact = 0;
+	std::vector<BuildData> buildData = std::vector<BuildData>(numMeshes);
+
 	//Create in terms of meshes
-	for(int mesh = 0; mesh < meshes; mesh++){
+	for(int mesh = 0; mesh < (size_t)numMeshes; mesh++){
 		//Produce geometry
 		VkDeviceAddress vertexAddress = getBufferAddress(device, vertexBuffer);
 		VkDeviceAddress indexAddress = getBufferAddress(device, meshIndexBuffers[mesh]);
@@ -680,15 +763,65 @@ void RTSystem::createBLAccelereationStructures() {
 		offsets[mesh].transformOffset = 0;
 
 
-		//Build
+		//Pre-Build
+		buildData[mesh].buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		buildData[mesh].buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+		buildData[mesh].buildInfo.flags = VK_GEOMETRY_OPAQUE_BIT_KHR | flags;
+		buildData[mesh].buildInfo.geometryCount = 1;
+		buildData[mesh].buildInfo.pGeometries = &geometries[mesh];
+		buildData[mesh].rangeInfo = &offsets[mesh];
 
-		//Create
+		vkGetAccelerationStructureBuildSizesKHR(device,
+			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildData[mesh].buildInfo,
+			&offsets[mesh].primitiveCount, &buildData[mesh].sizeInfo);
 
-		//Compact
-		
+		accStructTotalSize += buildData[mesh].sizeInfo.accelerationStructureSize;
+		maxScratchSize = max(maxScratchSize,
+			buildData[mesh].sizeInfo.buildScratchSize);
+		blasToCompact += (buildData[mesh].buildInfo.flags &
+			VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR) != 0 ? 1 : 0;
+	}
+	
+	//Build
+	VkBuffer scratchBuffer; 
+	VkDeviceMemory scratchBufferMemrory;
+	createBuffer(maxScratchSize, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, scratchBuffer, 
+		scratchBufferMemrory, true);
+	VkDeviceAddress scratchAddress = getBufferAddress(device,scratchBuffer);
+
+	VkQueryPool queryPool{ VK_NULL_HANDLE };
+	if (blasToCompact == numMeshes) {
+		VkQueryPoolCreateInfo queryInfo{
+			VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO
+		};
+		queryInfo.queryCount = numMeshes;
+		queryInfo.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
+		vkCreateQueryPool(device, &queryInfo, nullptr, &queryPool);
 	}
 
-	//Do same for init pools
+	std::vector<uint32_t> meshIndicies;
+	VkDeviceSize batchSize{ 0 };
+	VkDeviceSize batchLimit{ 250'000'000 };
+	blas.resize(numMeshes);
+	for (size_t mesh = 0; mesh < numMeshes; mesh++) {
+		meshIndicies.push_back(mesh);
+		batchSize += buildData[mesh].sizeInfo.accelerationStructureSize;
+		if (batchSize >= batchLimit || mesh >= numMeshes - 1) {
+			createBLAccelereationStructure(meshIndicies, buildData, scratchAddress, queryPool);
+			if (queryPool) {
+				std::vector<AS> cleanupAs;
+				compactBLAccelereationStructure(meshIndicies, buildData, queryPool, cleanupAs);
+				
+
+				//TODO: Destroy cleanupAS!
+
+				meshIndicies.clear();
+				batchSize = 0;
+			}
+		}
+	}
 }
 
 void RTSystem::createTLAccelereationStructures() {

@@ -92,7 +92,33 @@ private:
 		VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
 		VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_2D, int levels = 1);
 	void createImageViews();
-	void createBLAccelereationStructures();
+
+
+	struct BuildData {
+		VkAccelerationStructureBuildGeometryInfoKHR buildInfo;
+		const VkAccelerationStructureBuildRangeInfoKHR* rangeInfo;
+		VkAccelerationStructureBuildSizesInfoKHR sizeInfo;
+	};
+
+	struct AS {
+		VkBuffer buf;
+		VkDeviceMemory mem;
+		VkAccelerationStructureKHR acc;
+		void create(VkAccelerationStructureCreateInfoKHR createInfo);
+	};
+	
+
+	void createBLAccelereationStructure(
+		std::vector<uint32_t> meshIndicies, 
+		std::vector<BuildData> buildData, 
+		VkDeviceAddress scratchAddress,
+		VkQueryPool queryPool);
+	void compactBLAccelereationStructure(
+		std::vector<uint32_t> meshIndicies, 
+		std::vector<BuildData> buildData, 
+		VkQueryPool queryPool,
+		std::vector<AS>& cleanupAS);
+	void createBLAccelereationStructures(uint32_t flags);
 	void createTLAccelereationStructures();
 	void createAccelereationStructures();
 	void createDescriptorSetLayout();
@@ -191,6 +217,8 @@ private:
 	std::vector<VkDeviceMemory> meshIndexBufferMemorys;
 	std::vector<VkBuffer> meshTransformBuffers;
 	std::vector<VkDeviceMemory> meshTransformMemorys;
+	//Acceleration Structures
+	std::vector<AS> blas;
 	//Images
 	bool initialFrame = true;
 	std::vector<Texture> rawTextures;
