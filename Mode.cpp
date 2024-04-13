@@ -227,7 +227,7 @@ int Mode::modeMain() {
 	Parser parser;
 	SceneGraph graph = parser.parseJson(sceneName, verbose);
 	
-
+	useRT = true;
 	graph.drawType = useRT ? DRAW_MESH : ( useInstancing ? DRAW_INSTANCED : DRAW_STANDARD);
 	Texture lut = Texture::parseTexture("Textures/LUT.png", false);
 	vulkanSystem.LUT = lut;

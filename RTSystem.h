@@ -218,6 +218,12 @@ private:
 	std::vector<VkBuffer> meshTransformBuffers;
 	std::vector<VkDeviceMemory> meshTransformMemorys;
 	//Acceleration Structures
+
+	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
+	PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteAccelerationStructuresPropertiesKHR;
+	PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR;
+	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+
 	std::vector<AS> blas;
 	//Images
 	bool initialFrame = true;

@@ -444,7 +444,7 @@ public:
 		std::vector<Driver>& cameraDrivers,
 		std::vector < std::vector<mat44<float>>>& instancedTransforms,
 		std::vector<std::vector<mat44<float>>>& instancedNormalTransforms,
-		std::vector<std::vector<uint32_t>> meshIndices,
+		std::vector<std::vector<uint32_t>>& meshIndices,
 		std::vector<DrawNode>& drawNodes
 	);
 	std::vector<Texture> textureMaps;

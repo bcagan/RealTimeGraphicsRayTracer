@@ -835,7 +835,22 @@ void RTSystem::createTLAccelereationStructures() {
 }
 
 void RTSystem::createAccelereationStructures() {
-	createBLAccelereationStructures();
+	//https://github.com/SaschaWillems/Vulkan/blob/master/examples/raytracingbasic/raytracingbasic.cpp
+
+	vkGetAccelerationStructureBuildSizesKHR = 
+		reinterpret_cast<PFN_vkGetAccelerationStructureBuildSizesKHR>
+		(vkGetDeviceProcAddr(device, "vkGetAccelerationStructureBuildSizesKHR"));
+	vkCmdWriteAccelerationStructuresPropertiesKHR = 
+		reinterpret_cast<PFN_vkCmdWriteAccelerationStructuresPropertiesKHR>
+		(vkGetDeviceProcAddr(device, "vkCmdWriteAccelerationStructuresPropertiesKHR"));
+	vkCmdCopyAccelerationStructureKHR =
+		reinterpret_cast<PFN_vkCmdCopyAccelerationStructureKHR>
+		(vkGetDeviceProcAddr(device, "vkCmdCopyAccelerationStructureKHR"));
+	vkCmdBuildAccelerationStructuresKHR =
+		reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>
+		(vkGetDeviceProcAddr(device, "vkCmdBuildAccelerationStructuresKHR"));
+
+	createBLAccelereationStructures(VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 	createTLAccelereationStructures();
 }
 

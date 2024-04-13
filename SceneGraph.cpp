@@ -100,7 +100,7 @@ void SceneGraph::recurseSceneGraph(
 	std::vector<Driver>& cameraDrivers,
 	std::vector<std::vector<mat44<float>>>& instancedTransforms,
 	std::vector<std::vector<mat44<float>>>& instancedNormalTransforms,
-	std::vector<std::vector<uint32_t>> meshIndices,
+	std::vector<std::vector<uint32_t>>& meshIndices,
 	std::vector<DrawNode>& drawNodes) {
 	//Get graph node and related transform information
 	if (node >= graphNodes.size()) {
@@ -220,8 +220,6 @@ void SceneGraph::recurseSceneGraph(
 			if (mesh.material.has_value()) {
 				draw.material = materials[*mesh.material];
 			}
-			if(drawType == DRAW_MESH)
-				meshIndices.push_back(indices);
 
 			//Important: Vertices AND indices need to be added in THE ORDER TRAVERSED for the later pooling code to work!
 			//Load vertices and indicies into draw pools
@@ -241,20 +239,28 @@ void SceneGraph::recurseSceneGraph(
 			draw.boundingSphere = draw.produceBoundingSphere(meshVertices);
 
 			//Get indices
-			std::vector<uint32_t> meshIndices = std::vector<uint32_t>(mesh.indicies.has_value() ? (uint32_t)mesh.indicies->size() : (uint32_t)mesh.count);
+			std::vector<uint32_t> nodeIndicies = std::vector<uint32_t>(mesh.indicies.has_value() ? (uint32_t)mesh.indicies->size() : (uint32_t)mesh.count);
 			if (mesh.indicies.has_value()) {
 
+
+
 				for (int index = 0; index < mesh.indicies->size(); index++) {
-					meshIndices[index] = (*mesh.indicies)[index] + draw.start;
+					nodeIndicies[index] = (*mesh.indicies)[index] + draw.start;
 				}
 			}
 			else {
 				for (int index = 0; index < mesh.count; index++) {
-					meshIndices[index] = draw.start + index;
+					nodeIndicies[index] = draw.start + index;
 				}
 			}
-			indices.reserve(indices.size() + meshIndices.size());
-			indices.insert(indices.end(), meshIndices.begin(), meshIndices.end());
+
+
+			if (drawType == DRAW_MESH) {
+				meshIndices.push_back(nodeIndicies);
+			}
+
+			indices.reserve(indices.size() + nodeIndicies.size());
+			indices.insert(indices.end(), nodeIndicies.begin(), nodeIndicies.end());
 			draw.indexCount = indices.size() - draw.indexStart;
 			//insert node into draw list
 			drawNodes.push_back(draw);
@@ -533,25 +539,30 @@ DrawList SceneGraph::navigateSceneGraph(bool verbose, int poolSize) {
 
 	//For ray tracing support, create mesh specific data pools
 	if (DRAW_MESH) {
-		size_t meshNum = list.meshTransformPools.size();
 		list.meshTransformPools = intermediate.transforms;
+		size_t meshNum = list.meshTransformPools.size();
 		list.meshNormalTransformPools = intermediate.normalTransforms;
 		list.meshEnvironmentTransformPools = 
 			std::vector<mat44<float>>(meshNum);
 		list.meshBoundingSpheres = 
 			std::vector<std::pair<vec3<float_t>, float>>(meshNum);
 		list.meshMaterials = std::vector<DrawMaterial>(meshNum);
-		for (int i = 0; i < list.meshTransformPools.size(); i++) {
+		for (int mesh = 0; mesh < meshNum; mesh++) {
 			if (worldToEnvironment.has_value()) {
-				list.meshEnvironmentTransformPools[i] =
-					*worldToEnvironment * list.meshTransformPools[i];
+				list.meshEnvironmentTransformPools[mesh] =
+					*worldToEnvironment * list.meshTransformPools[mesh];
 			}
-			DrawNode drawNode = intermediate.drawPool[i];
-			list.meshMaterials[i] = processMaterial(drawNode.material);
-			list.meshBoundingSpheres[i] = drawNode.boundingSphere;
+			DrawNode drawNode = intermediate.drawPool[mesh];
+			if (drawNode.material.has_value()) {
+				list.meshMaterials[mesh] = processMaterial(drawNode.material);
+			}
+			else {
+				list.meshMaterials[mesh].type = MAT_NONE;
+			}
+			list.meshBoundingSpheres[mesh] = drawNode.boundingSphere;
 			int minIndex = INT_MAX; int maxIndex = -1;
-			for (int ind = 0; ind < list.meshIndexPools[i].size(); i++) {
-				uint32_t thisIndex = list.meshIndexPools[i][ind];
+			for (int ind = 0; ind < list.meshIndexPools[mesh].size(); ind++) {
+				uint32_t thisIndex = list.meshIndexPools[mesh][ind];
 				if (thisIndex > maxIndex) maxIndex = thisIndex;
 				if (thisIndex < minIndex) minIndex = thisIndex;
 			}

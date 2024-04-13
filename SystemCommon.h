@@ -523,7 +523,7 @@ static uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags proper
 	throw std::runtime_error("ERROR: Unable to find a suitable memory type in VulkanSystem.");
 }
 
-VkDeviceAddress getBufferAddress(VkDevice device, VkBuffer buffer) {
+static VkDeviceAddress getBufferAddress(VkDevice device, VkBuffer buffer) {
 	VkBufferDeviceAddressInfo info;
 	info.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO_KHR;
 	info.pNext = nullptr;
