@@ -184,7 +184,6 @@ private:
 	VkSurfaceKHR surface;
 	VkPhysicalDevice physicalDevice;
 	VkDevice device;
-	VkPhysicalDeviceFeatures physicalDeviceFeatures{};
 	QueueFamilyIndices familyIndices;
 	//Pipeline
 	std::vector<VkDeviceMemory> attachmentMemorys;
@@ -223,6 +222,7 @@ private:
 	PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteAccelerationStructuresPropertiesKHR;
 	PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR;
 	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
+	PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
 
 	std::vector<AS> blas;
 	//Images
@@ -300,7 +300,8 @@ private:
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
 		VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
-		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME
+		VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+		VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME
 	};
 
 

@@ -491,12 +491,21 @@ void RTSystem::createLogicalDevice() {
 	createInfo.queueCreateInfoCount =
 		static_cast<uint32_t>(deviceQueueCreateInfos.size());
 	createInfo.pQueueCreateInfos = deviceQueueCreateInfos.data();
-	physicalDeviceFeatures.samplerAnisotropy = VK_TRUE;
-	createInfo.pEnabledFeatures = &physicalDeviceFeatures;
 	createInfo.enabledExtensionCount =
 		static_cast<uint32_t>(deviceExtensions.size());
 	createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 	createInfo.enabledLayerCount = 0;
+	VkPhysicalDeviceFeatures2 phyDeviceFeatures = {};
+	VkPhysicalDeviceVulkan12Features deviceFeatures = {};
+	phyDeviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR;
+	deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	deviceFeatures.bufferDeviceAddress = VK_TRUE;
+	phyDeviceFeatures.pNext = &deviceFeatures;
+	vkGetPhysicalDeviceFeatures2(physicalDevice, &phyDeviceFeatures);
+	deviceFeatures.bufferDeviceAddress = VK_TRUE;
+	phyDeviceFeatures.features.samplerAnisotropy = VK_TRUE;
+	createInfo.pNext = &phyDeviceFeatures;
+	createInfo.pEnabledFeatures = nullptr;
 	if (enableValidationLayers) {
 		createInfo.enabledLayerCount =
 			static_cast<uint32_t>(validationLayers.size());
@@ -849,6 +858,9 @@ void RTSystem::createAccelereationStructures() {
 	vkCmdBuildAccelerationStructuresKHR =
 		reinterpret_cast<PFN_vkCmdBuildAccelerationStructuresKHR>
 		(vkGetDeviceProcAddr(device, "vkCmdBuildAccelerationStructuresKHR"));
+	vkGetBufferDeviceAddress =
+		reinterpret_cast<PFN_vkGetBufferDeviceAddress>
+		(vkGetDeviceProcAddr(device, "vkGetBufferDeviceAddress"));
 
 	createBLAccelereationStructures(VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 	createTLAccelereationStructures();
@@ -1121,7 +1133,7 @@ void RTSystem::createVertexBuffer(bool realloc) {
 void RTSystem::createTransformBuffers(bool realloc) {
 
 	int stagingBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	int usageBits = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | 
+	int usageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 	int propertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	meshTransformBuffers.resize(transformPoolsMesh.size());
