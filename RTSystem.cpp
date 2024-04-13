@@ -497,13 +497,16 @@ void RTSystem::createLogicalDevice() {
 	createInfo.enabledLayerCount = 0;
 	VkPhysicalDeviceFeatures2 phyDeviceFeatures = {};
 	VkPhysicalDeviceVulkan12Features deviceFeatures = {};
+	VkPhysicalDeviceAccelerationStructureFeaturesKHR accFeatures{};
+	accFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
 	phyDeviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR;
 	deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
-	deviceFeatures.bufferDeviceAddress = VK_TRUE;
+	deviceFeatures.pNext = &accFeatures;
 	phyDeviceFeatures.pNext = &deviceFeatures;
 	vkGetPhysicalDeviceFeatures2(physicalDevice, &phyDeviceFeatures);
 	deviceFeatures.bufferDeviceAddress = VK_TRUE;
 	phyDeviceFeatures.features.samplerAnisotropy = VK_TRUE;
+	accFeatures.accelerationStructure = VK_TRUE;
 	createInfo.pNext = &phyDeviceFeatures;
 	createInfo.pEnabledFeatures = nullptr;
 	if (enableValidationLayers) {
@@ -778,7 +781,9 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 		buildData[mesh].buildInfo.flags = VK_GEOMETRY_OPAQUE_BIT_KHR | flags;
 		buildData[mesh].buildInfo.geometryCount = 1;
 		buildData[mesh].buildInfo.pGeometries = &geometries[mesh];
+		buildData[mesh].buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
 		buildData[mesh].rangeInfo = &offsets[mesh];
+		buildData[mesh].sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
 
 		vkGetAccelerationStructureBuildSizesKHR(device,
 			VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildData[mesh].buildInfo,
