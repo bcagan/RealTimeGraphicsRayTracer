@@ -794,9 +794,9 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 	//Build
 	VkBuffer scratchBuffer; 
 	VkDeviceMemory scratchBufferMemrory;
-	createBuffer(maxScratchSize, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+	createBuffer(maxScratchSize,  VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, scratchBuffer, 
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT, scratchBuffer,
 		scratchBufferMemrory, true);
 	VkDeviceAddress scratchAddress = getBufferAddress(device,scratchBuffer);
 
@@ -1046,10 +1046,14 @@ void RTSystem::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
 	vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
 
 	VkMemoryAllocateInfo allocInfo{};
+	VkMemoryAllocateFlagsInfo flags{};
+	flags.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+	flags.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT_KHR;
 	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocInfo.allocationSize = memRequirements.size;
 	allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits,
 		properties, physicalDevice);
+	allocInfo.pNext = &flags;
 	if (realloc) {
 		if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
 			throw std::runtime_error("ERROR: Unable to allocate a buffer memory in RTSystem.");
@@ -1103,7 +1107,8 @@ void RTSystem::copyBuffer(VkBuffer source, VkBuffer dest,
 void RTSystem::createVertexBuffer(bool realloc) {
 	useVertexBuffer = false;
 	int stagingBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	int vertexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	int vertexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT 
+		| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 	int vertexPropertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	if (vertices.size() != 0) {
 		useVertexBuffer = true;
@@ -1133,7 +1138,7 @@ void RTSystem::createVertexBuffer(bool realloc) {
 void RTSystem::createTransformBuffers(bool realloc) {
 
 	int stagingBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	int usageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+	int usageBits = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
 		VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 	int propertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	meshTransformBuffers.resize(transformPoolsMesh.size());
@@ -1541,7 +1546,8 @@ void RTSystem::createIndexBuffers(bool realloc, bool andFree) {
 			vkUnmapMemory(device, stagingBufferMemory);
 
 			//Create proper index buffer
-			int indexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+			int indexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+				 | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 			int indexPropertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 			createBuffer(bufferSize, indexUsageBits, indexPropertyBits,
 				meshIndexBuffers[pool], meshIndexBufferMemorys[pool], realloc);
