@@ -101,16 +101,17 @@ private:
 	};
 
 	struct AS {
+		PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR;
 		VkBuffer buf;
 		VkDeviceMemory mem;
 		VkAccelerationStructureKHR acc;
-		void create(VkAccelerationStructureCreateInfoKHR createInfo);
+		void create(VkAccelerationStructureCreateInfoKHR createInfo, VkDevice device);
 	};
 	
 
 	void createBLAccelereationStructure(
 		std::vector<uint32_t> meshIndicies, 
-		std::vector<BuildData> buildData, 
+		std::vector<BuildData>& buildData, 
 		VkDeviceAddress scratchAddress,
 		VkQueryPool queryPool);
 	void compactBLAccelereationStructure(

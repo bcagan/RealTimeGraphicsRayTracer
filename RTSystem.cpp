@@ -651,13 +651,20 @@ void RTSystem::createImageViews() {
 	}
 }
 
-void RTSystem::AS::create(VkAccelerationStructureCreateInfoKHR createInfo) {
+void RTSystem::AS::create(VkAccelerationStructureCreateInfoKHR createInfo, VkDevice device) {
+	//https://github.com/nvpro-samples/nvpro_core/blob/8f7bcbffabf2e031bebc198daf10e196439474a4/nvvk/resourceallocator_vk.cpp#L501
 	createInfo.buffer = buf;
+
+	vkCreateAccelerationStructureKHR =
+		reinterpret_cast<PFN_vkCreateAccelerationStructureKHR>
+		(vkGetDeviceProcAddr(device, "vkCreateAccelerationStructureKHR"));
+
+	vkCreateAccelerationStructureKHR(device,&createInfo,nullptr,&acc);
 }
 
 void RTSystem::createBLAccelereationStructure(
 	std::vector<uint32_t> meshIndicies,
-	std::vector<BuildData> buildData,
+	std::vector<BuildData>& buildData,
 	VkDeviceAddress scratchAddress,
 	VkQueryPool queryPool) {
 	if (queryPool) {
@@ -667,15 +674,22 @@ void RTSystem::createBLAccelereationStructure(
 
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 	for (const uint32_t& idx : meshIndicies) {
-		VkAccelerationStructureCreateInfoKHR createInfo;
+		VkAccelerationStructureCreateInfoKHR createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 		createInfo.size = buildData[idx].sizeInfo.accelerationStructureSize;
-		blas[idx].create(createInfo);
+
+		createBuffer(createInfo.size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR
+			| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+			VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT,
+			blas[idx].buf, blas[idx].mem, true);
+		blas[idx].create(createInfo,device);
 		buildData[idx].buildInfo.dstAccelerationStructure = blas[idx].acc;
 		buildData[idx].buildInfo.scratchData.deviceAddress = scratchAddress;
 		vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1,
 			&buildData[idx].buildInfo, &buildData[idx].rangeInfo);
-	
+
+
 		VkMemoryBarrier barrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER };
 		barrier.srcAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
 		barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_READ_BIT_KHR;
@@ -710,10 +724,11 @@ void RTSystem::compactBLAccelereationStructure(
 	for (uint32_t idx : meshIndicies) {
 		cleanupAs.push_back(blas[idx]);
 		buildData[idx].sizeInfo.accelerationStructureSize = compactSizes[queryCount++];
-		VkAccelerationStructureCreateInfoKHR createInfo;
+		VkAccelerationStructureCreateInfoKHR createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 		createInfo.size = buildData[idx].sizeInfo.accelerationStructureSize;
-		blas[idx].create(createInfo);
+		blas[idx].create(createInfo,device);
 		
 		VkCopyAccelerationStructureInfoKHR copyInfo{ VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR };
 		copyInfo.src = buildData[idx].buildInfo.dstAccelerationStructure;
@@ -1113,7 +1128,7 @@ void RTSystem::createVertexBuffer(bool realloc) {
 	useVertexBuffer = false;
 	int stagingBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	int vertexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT 
-		| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 	int vertexPropertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	if (vertices.size() != 0) {
 		useVertexBuffer = true;
@@ -1552,7 +1567,8 @@ void RTSystem::createIndexBuffers(bool realloc, bool andFree) {
 
 			//Create proper index buffer
 			int indexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-				 | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+				 | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | 
+				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
 			int indexPropertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 			createBuffer(bufferSize, indexUsageBits, indexPropertyBits,
 				meshIndexBuffers[pool], meshIndexBufferMemorys[pool], realloc);
