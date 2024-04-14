@@ -107,12 +107,6 @@ private:
 		VkAccelerationStructureKHR acc;
 		void create(VkAccelerationStructureCreateInfoKHR createInfo, VkDevice device);
 
-		VkDeviceAddress address(VkDevice device) {
-
-			VkAccelerationStructureDeviceAddressInfoKHR addressInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR };
-			addressInfo.accelerationStructure = acc;
-			return vkGetAccelerationStructureDeviceAddressKHR(device, &addressInfo);
-		}
 	};
 	
 
@@ -127,7 +121,7 @@ private:
 		VkQueryPool queryPool,
 		std::vector<AS>& cleanupAS);
 	void createBLAccelereationStructures(uint32_t flags);
-	void createTLAccelereationStructures();
+	void createTLAccelereationStructures(VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
 	void createAccelereationStructures();
 	void createDescriptorSetLayout();
 	void createGraphicsPipeline(std::string vertShader, std::string fragShader, VkPipeline& pipeline, VkPipelineLayout& layout, int subpass, VkRenderPass inRenderPass);
@@ -231,9 +225,10 @@ private:
 	PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR;
 	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR;
 	PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
-
+	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
 	std::vector<AS> blas;
-	std::vector<VkAccelerationStructureInstanceKHR> tlas;
+	AS tlas;
+	std::vector<VkAccelerationStructureInstanceKHR> tlasInstances;
 	//Images
 	bool initialFrame = true;
 	std::vector<Texture> rawTextures;

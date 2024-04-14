@@ -857,14 +857,19 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 
 void RTSystem::createTLAccelereationStructures(VkBuildAccelerationStructureFlagsKHR flags) {
 	//Produce instances
-	tlas.resize(blas.size());
-	for (int inst = 0; inst < tlas.size(); inst++) {
-		tlas[inst].transform = identityVKTransform();
-		tlas[inst].instanceCustomIndex = inst;
-		tlas[inst].accelerationStructureReference = blas[inst].address(device);
-		tlas[inst].flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-		tlas[inst].mask = 0xFF;
-		tlas[inst].instanceShaderBindingTableRecordOffset = 0;
+	tlasInstances.resize(blas.size());
+	for (int inst = 0; inst < tlasInstances.size(); inst++) {
+		tlasInstances[inst].transform = identityVKTransform();
+		tlasInstances[inst].instanceCustomIndex = inst;
+
+		VkAccelerationStructureDeviceAddressInfoKHR addressInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR };
+		addressInfo.accelerationStructure = blas[inst].acc;
+		VkDeviceAddress address = vkGetAccelerationStructureDeviceAddressKHR(device, &addressInfo);
+
+		tlasInstances[inst].accelerationStructureReference = address;
+		tlasInstances[inst].flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+		tlasInstances[inst].mask = 0xFF;
+		tlasInstances[inst].instanceShaderBindingTableRecordOffset = 0;
 	}
 
 	//Create instance buffer
@@ -872,7 +877,7 @@ void RTSystem::createTLAccelereationStructures(VkBuildAccelerationStructureFlags
 	VkDeviceMemory accMemory;
 	VkBuffer scratchBuffer;
 	VkDeviceMemory scratchMemory;
-	size_t accSize = sizeof(VkAccelerationStructureInstanceKHR) * tlas.size();
+	size_t accSize = sizeof(VkAccelerationStructureInstanceKHR) * tlasInstances.size();
 	createBuffer(accSize, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
 		| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
 		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT,
@@ -880,10 +885,12 @@ void RTSystem::createTLAccelereationStructures(VkBuildAccelerationStructureFlags
 
 	void* data;
 	vkMapMemory(device, accMemory, 0, accSize, 0, &data);
-	memcpy(data, tlas.data(), accSize);
+	memcpy(data, tlasInstances.data(), accSize);
 	vkUnmapMemory(device, accMemory);
 
 	VkBufferDeviceAddressInfo bufferInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
+	bufferInfo.pNext = nullptr;
+	bufferInfo.buffer = accBuffer;
 	VkDeviceAddress accBufferAdr = vkGetBufferDeviceAddress(device, &bufferInfo);
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands();
 	VkMemoryBarrier barrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER };
@@ -904,7 +911,7 @@ void RTSystem::createTLAccelereationStructures(VkBuildAccelerationStructureFlags
 	geometry.geometry.instances = instancesData;
 
 	//Sizes
-	uint32_t instanceCount;
+	uint32_t instanceCount = tlasInstances.size();
 	VkAccelerationStructureBuildGeometryInfoKHR buildInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR };
 	buildInfo.flags = flags;
 	buildInfo.geometryCount = 1;
@@ -916,6 +923,42 @@ void RTSystem::createTLAccelereationStructures(VkBuildAccelerationStructureFlags
 	vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo,
 		&instanceCount, &sizeInfo);
 
+	//Create tlas
+	VkAccelerationStructureCreateInfoKHR createInfo{
+		VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR
+	};
+	createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+	createInfo.size = sizeInfo.accelerationStructureSize;
+	createBuffer(createInfo.size, VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR
+		| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT,
+		tlas.buf, tlas.mem, true);
+	tlas.create(createInfo, device);
+
+	//Allocate scratch buffer
+	createBuffer(sizeInfo.buildScratchSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT
+		| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+		VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT, scratchBuffer, scratchMemory, 
+		true);
+	VkBufferDeviceAddressInfo scratchInfo{
+		VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO
+	};
+	scratchInfo.pNext = nullptr;
+	scratchInfo.buffer = scratchBuffer;
+	VkDeviceAddress scratchAddress = vkGetBufferDeviceAddress(device, &scratchInfo);
+	
+	//Build tlas
+	buildInfo.srcAccelerationStructure = VK_NULL_HANDLE;
+	buildInfo.dstAccelerationStructure = tlas.acc;
+	buildInfo.scratchData.deviceAddress = scratchAddress;
+	VkAccelerationStructureBuildRangeInfoKHR offsetInfo;
+	offsetInfo.primitiveCount = instanceCount;
+	offsetInfo.firstVertex = 0;
+	offsetInfo.primitiveOffset = 0;
+	offsetInfo.transformOffset = 0;
+	VkAccelerationStructureBuildRangeInfoKHR* offsetInfoP = &offsetInfo;
+	vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &offsetInfoP);
 
 	endSingleTimeCommands(commandBuffer);
 	//TODO: destroy scratch buffer
@@ -940,6 +983,9 @@ void RTSystem::createAccelereationStructures() {
 	vkGetBufferDeviceAddress =
 		reinterpret_cast<PFN_vkGetBufferDeviceAddress>
 		(vkGetDeviceProcAddr(device, "vkGetBufferDeviceAddress"));
+	vkGetAccelerationStructureDeviceAddressKHR =
+		reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>
+		(vkGetDeviceProcAddr(device,"vkGetAccelerationStructureDeviceAddressKHR"));
 
 	createBLAccelereationStructures(VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 	createTLAccelereationStructures();
