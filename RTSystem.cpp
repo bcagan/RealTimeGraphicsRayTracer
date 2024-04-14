@@ -149,6 +149,8 @@ void RTSystem::cleanup() {
 	std::cout << "Cleaning up Vulkan Mode." << std::endl;
 #endif // DEBUG
 
+	//TODO: Cleanup acc structures here!
+
 	cleanupSwapChain();
 	for (VkImageView texImageView : textureImageViews) {
 		vkDestroyImageView(device, texImageView, nullptr);
@@ -853,14 +855,71 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 	}
 }
 
-void RTSystem::createTLAccelereationStructures() {
-	//Produce geometry
+void RTSystem::createTLAccelereationStructures(VkBuildAccelerationStructureFlagsKHR flags) {
+	//Produce instances
+	tlas.resize(blas.size());
+	for (int inst = 0; inst < tlas.size(); inst++) {
+		tlas[inst].transform = identityVKTransform();
+		tlas[inst].instanceCustomIndex = inst;
+		tlas[inst].accelerationStructureReference = blas[inst].address(device);
+		tlas[inst].flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+		tlas[inst].mask = 0xFF;
+		tlas[inst].instanceShaderBindingTableRecordOffset = 0;
+	}
 
-	//Build
+	//Create instance buffer
+	VkBuffer accBuffer;
+	VkDeviceMemory accMemory;
+	VkBuffer scratchBuffer;
+	VkDeviceMemory scratchMemory;
+	size_t accSize = sizeof(VkAccelerationStructureInstanceKHR) * tlas.size();
+	createBuffer(accSize, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+		| VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT,
+		accBuffer,accMemory, true);
 
-	//Create
+	void* data;
+	vkMapMemory(device, accMemory, 0, accSize, 0, &data);
+	memcpy(data, tlas.data(), accSize);
+	vkUnmapMemory(device, accMemory);
 
-	//Compact
+	VkBufferDeviceAddressInfo bufferInfo{ VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO };
+	VkDeviceAddress accBufferAdr = vkGetBufferDeviceAddress(device, &bufferInfo);
+	VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+	VkMemoryBarrier barrier{ VK_STRUCTURE_TYPE_MEMORY_BARRIER };
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
+	vkCmdPipelineBarrier(commandBuffer,
+		VK_PIPELINE_STAGE_TRANSFER_BIT,
+		VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
+		0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+	//Preparing geometry
+	VkAccelerationStructureGeometryInstancesDataKHR instancesData
+	{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR };
+	instancesData.data.deviceAddress = accBufferAdr;
+	VkAccelerationStructureGeometryKHR geometry
+	{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR };
+	geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+	geometry.geometry.instances = instancesData;
+
+	//Sizes
+	uint32_t instanceCount;
+	VkAccelerationStructureBuildGeometryInfoKHR buildInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR };
+	buildInfo.flags = flags;
+	buildInfo.geometryCount = 1;
+	buildInfo.pGeometries = &geometry;
+	buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+	buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+	buildInfo.srcAccelerationStructure = VK_NULL_HANDLE;
+	VkAccelerationStructureBuildSizesInfoKHR sizeInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR };
+	vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo,
+		&instanceCount, &sizeInfo);
+
+
+	endSingleTimeCommands(commandBuffer);
+	//TODO: destroy scratch buffer
+	//TODO: destory acc buffer
 }
 
 void RTSystem::createAccelereationStructures() {

@@ -106,6 +106,13 @@ private:
 		VkDeviceMemory mem;
 		VkAccelerationStructureKHR acc;
 		void create(VkAccelerationStructureCreateInfoKHR createInfo, VkDevice device);
+
+		VkDeviceAddress address(VkDevice device) {
+
+			VkAccelerationStructureDeviceAddressInfoKHR addressInfo{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR };
+			addressInfo.accelerationStructure = acc;
+			return vkGetAccelerationStructureDeviceAddressKHR(device, &addressInfo);
+		}
 	};
 	
 
@@ -226,6 +233,7 @@ private:
 	PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
 
 	std::vector<AS> blas;
+	std::vector<VkAccelerationStructureInstanceKHR> tlas;
 	//Images
 	bool initialFrame = true;
 	std::vector<Texture> rawTextures;

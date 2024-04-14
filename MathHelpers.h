@@ -1192,6 +1192,21 @@ template<typename T> struct mat44 {
 
 };
 
+static VkTransformMatrixKHR identityVKTransform() {
+	VkTransformMatrixKHR vulkanTransform;
+	for (int row = 0; row < 3; row++) {
+		for (int col = 0; col < 4; col++) {
+			if (row == col) {
+				vulkanTransform.matrix[row][col] = 1;
+			}
+			else {
+				vulkanTransform.matrix[row][col] = 0;
+			}
+		}
+	}
+	return vulkanTransform;
+}
+
 //Interface based on glm::quaternion but implementation entirely original unless noted otherwise
 template<typename T> class quaternion {
 private:
