@@ -1737,9 +1737,36 @@ void RTSystem::createUniformBuffers(bool realloc) {
 
 
 void RTSystem::createDescriptorPool() {
+
+	std::array<VkDescriptorPoolSize, 2> poolSizesHDR{};
+	poolSizesHDR[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSizesHDR[0].descriptorCount = 2;
+	VkDescriptorPoolCreateInfo poolInfoHDR{};
+	poolInfoHDR.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfoHDR.poolSizeCount = poolSizesHDR.size();
+	poolInfoHDR.pPoolSizes = poolSizesHDR.data();
+	poolInfoHDR.maxSets = (2)*MAX_FRAMES_IN_FLIGHT;
+	if (vkCreateDescriptorPool(device, &poolInfoHDR, nullptr, &descriptorPoolHDR)
+		!= VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to create a descriptor pool in Vulkan System.");
+	}
+	VkDescriptorPoolSize poolSizeFinal{};
+	poolSizeFinal.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+	poolSizeFinal.descriptorCount = MAX_FRAMES_IN_FLIGHT;
+	VkDescriptorPoolCreateInfo poolInfoFinal{};
+	poolInfoFinal.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	poolInfoFinal.poolSizeCount = 1;
+	poolInfoFinal.pPoolSizes = &poolSizeFinal;
+	poolInfoFinal.maxSets = MAX_FRAMES_IN_FLIGHT;
+	if (vkCreateDescriptorPool(device, &poolInfoFinal, nullptr, &descriptorPoolFinal)
+		!= VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to create a descriptor pool in Vulkan System.");
+	}
 }
 
+
 void RTSystem::createDescriptorSets() {
+
 }
 
 void RTSystem::createCommands() {
