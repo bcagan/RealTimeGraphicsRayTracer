@@ -995,6 +995,53 @@ void RTSystem::createRenderPasses() {
 }
 
 void RTSystem::createDescriptorSetLayout() {
+
+
+	descriptorSetLayouts.resize(2);
+
+	VkDescriptorSetLayoutBinding tlasBinding{};
+	tlasBinding.binding = 0;
+	tlasBinding.descriptorCount = 1;
+	tlasBinding.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+	tlasBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+	tlasBinding.pImmutableSamplers = nullptr;
+
+	VkDescriptorSetLayoutBinding outImageBinding{};
+	outImageBinding.binding = 1;
+	outImageBinding.descriptorCount = 1;
+	outImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+	outImageBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+	outImageBinding.pImmutableSamplers = nullptr;
+
+
+	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding };
+
+	VkDescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfo.bindingCount = 2;
+	layoutInfo.pBindings = bindings;
+	if (vkCreateDescriptorSetLayout(
+		device, &layoutInfo, nullptr, &descriptorSetLayouts[0]) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Failed to create a descriptor set layout in Vulkan System.");
+	}
+
+	VkDescriptorSetLayoutBinding hdrBinding{};
+	hdrBinding.binding = 0;
+	hdrBinding.descriptorCount = 1;
+	hdrBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+	hdrBinding.pImmutableSamplers = nullptr;
+	hdrBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+	VkDescriptorSetLayoutCreateInfo layoutInfoFinal{};
+	layoutInfoFinal.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layoutInfoFinal.bindingCount = 1;
+	layoutInfoFinal.pBindings = &hdrBinding;
+	if (vkCreateDescriptorSetLayout(
+		device, &layoutInfoFinal, nullptr, &descriptorSetLayouts[1]) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Failed to create a descriptor set layout in Vulkan System.");
+	}
+
+
 }
 
 void RTSystem::createGraphicsPipeline(std::string vertShader,
