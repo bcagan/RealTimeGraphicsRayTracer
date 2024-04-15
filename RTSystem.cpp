@@ -1745,7 +1745,7 @@ void RTSystem::createDescriptorPool() {
 	poolInfoHDR.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfoHDR.poolSizeCount = poolSizesHDR.size();
 	poolInfoHDR.pPoolSizes = poolSizesHDR.data();
-	poolInfoHDR.maxSets = (2)*MAX_FRAMES_IN_FLIGHT;
+	poolInfoHDR.maxSets = MAX_FRAMES_IN_FLIGHT;
 	if (vkCreateDescriptorPool(device, &poolInfoHDR, nullptr, &descriptorPoolHDR)
 		!= VK_SUCCESS) {
 		throw std::runtime_error("ERROR: Unable to create a descriptor pool in Vulkan System.");
@@ -1767,6 +1767,81 @@ void RTSystem::createDescriptorPool() {
 
 void RTSystem::createDescriptorSets() {
 
+
+
+
+
+	std::vector<VkDescriptorSetLayout> layoutsHDR(MAX_FRAMES_IN_FLIGHT *
+		2);
+	VkDescriptorSetAllocateInfo allocateInfoHDR{};
+	allocateInfoHDR.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocateInfoHDR.descriptorPool = descriptorPoolHDR;
+	allocateInfoHDR.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
+	allocateInfoHDR.pSetLayouts = layoutsHDR.data();
+	descriptorSetsHDR.resize(MAX_FRAMES_IN_FLIGHT);
+	if (vkAllocateDescriptorSets(device, &allocateInfoHDR, descriptorSetsHDR.data())
+		!= VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to create descriptor sets in Vulkan System. HDR.");
+	}
+
+	std::vector<VkDescriptorSetLayout> layoutsFinal(MAX_FRAMES_IN_FLIGHT, descriptorSetLayouts[lightPool.size() + 1]);
+	VkDescriptorSetAllocateInfo allocateInfoFinal{};
+	allocateInfoFinal.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocateInfoFinal.descriptorPool = descriptorPoolFinal;
+	allocateInfoFinal.descriptorSetCount = MAX_FRAMES_IN_FLIGHT;
+	allocateInfoFinal.pSetLayouts = layoutsFinal.data();
+	descriptorSetsFinal.resize(MAX_FRAMES_IN_FLIGHT);
+	if (vkAllocateDescriptorSets(device, &allocateInfoFinal, descriptorSetsFinal.data())
+		!= VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to create descriptor sets in Vulkan System. Final.");
+	}
+
+
+	size_t pool = 0;
+	for (int frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
+		
+		VkWriteDescriptorSetAccelerationStructureKHR tlasDescriptor{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR };
+		tlasDescriptor.accelerationStructureCount = 1;
+		tlasDescriptor.pAccelerationStructures = &tlas.acc;
+		VkDescriptorImageInfo imageDescriptor{ {}, attachmentImageViews[frame], VK_IMAGE_LAYOUT_GENERAL};
+
+
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(2);
+		writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[0].dstSet = descriptorSetsHDR[frame];
+		writeDescriptorSets[0].pNext = &tlasDescriptor;
+		writeDescriptorSets[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+		writeDescriptorSets[0].descriptorCount = 1;
+		writeDescriptorSets[0].dstBinding = 0;
+		writeDescriptorSets[0].dstArrayElement = 0;
+		writeDescriptorSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[1].dstSet = descriptorSetsHDR[frame];
+		writeDescriptorSets[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		writeDescriptorSets[1].descriptorCount = 1;
+		writeDescriptorSets[1].dstBinding = 1;
+		writeDescriptorSets[1].pImageInfo = &imageDescriptor;
+		writeDescriptorSets[1].dstArrayElement = 0;
+		
+		vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
+
+	}
+
+	for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
+		VkDescriptorImageInfo finalDescriptor{};
+		finalDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		finalDescriptor.imageView = attachmentImageViews[frame];
+		finalDescriptor.sampler = VK_NULL_HANDLE;
+
+		VkWriteDescriptorSet writeDescriptorSet{};
+		writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSet.dstSet = descriptorSetsFinal[frame];
+		writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		writeDescriptorSet.descriptorCount = 1;
+		writeDescriptorSet.dstBinding = 0;
+		writeDescriptorSet.pImageInfo = &finalDescriptor;
+		writeDescriptorSet.dstArrayElement = 0;
+		vkUpdateDescriptorSets(device, 1, &writeDescriptorSet, 0, nullptr);
+	}
 }
 
 void RTSystem::createCommands() {
