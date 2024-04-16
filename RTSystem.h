@@ -124,7 +124,10 @@ private:
 	void createTLAccelereationStructures(VkBuildAccelerationStructureFlagsKHR flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR);
 	void createAccelereationStructures();
 	void createDescriptorSetLayout();
-	void createGraphicsPipeline(std::string vertShader, std::string fragShader, VkPipeline& pipeline, VkPipelineLayout& layout, int subpass, VkRenderPass inRenderPass);
+	void createGraphicsPipeline(std::string vertShader,
+		std::string fragShader, VkPipeline& pipeline, VkPipelineLayout& layout,
+		int subpass, VkRenderPass inRenderPass);
+	void createRTPipeline(std::string raygen, std::string miss, std::string closestHit, VkPipeline& pipeline, VkPipelineLayout& layout, int subpass, VkRenderPass inRenderPass);
 	void createGraphicsPipelines();
 	void createRenderPasses();
 	VkShaderModule createShaderModule(const std::vector<char>& shader);
@@ -293,8 +296,13 @@ private:
 	//RT
 	VkPhysicalDeviceRayTracingPipelinePropertiesKHR 
 		rtProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
+	std::array< VkRayTracingShaderGroupCreateInfoKHR,3> shaderGroups;
 
-
+	// Push constant structure for the ray tracer
+	struct PushConstantRay
+	{
+		float_4  clearColor;
+	};
 
 	const std::vector<const char*> validationLayers = {
 		"VK_LAYER_KHRONOS_validation"

@@ -1044,6 +1044,85 @@ void RTSystem::createDescriptorSetLayout() {
 
 }
 
+
+void RTSystem::createRTPipeline(
+	std::string raygen,
+	std::string miss,
+	std::string closestHit,
+	VkPipeline& pipeline,
+	VkPipelineLayout& layout,
+	int subpass,
+	VkRenderPass inRenderPass
+) {
+
+	std::vector<char> raygenShaderRawData = readFile((shaderDir + raygen).c_str());
+	std::vector<char> missShaderRawData = readFile((shaderDir + miss).c_str());
+	std::vector<char> closestHitShaderRawData = readFile((shaderDir + closestHit).c_str());
+	VkShaderModule raygenShaderModule = createShaderModule(raygenShaderRawData);
+	VkShaderModule missShaderModule = createShaderModule(missShaderRawData);
+	VkShaderModule closestHitShaderModule = createShaderModule(closestHitShaderRawData);
+
+	std::array<VkPipelineShaderStageCreateInfo, 3> stages{};
+	for (int i = 0; i < 3; i++) {
+		stages[i].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		stages[i].pName = "main";
+	}
+	stages[0].module = raygenShaderModule;
+	stages[0].stage = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+	stages[1].module = missShaderModule;
+	stages[1].stage = VK_SHADER_STAGE_MISS_BIT_KHR;
+	stages[2].module = closestHitShaderModule;
+	stages[2].stage = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+	//Shader group
+	for (int i = 0; i < 3; i++) {
+		shaderGroups[i].sType =
+			VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+		shaderGroups[i].anyHitShader = VK_SHADER_UNUSED_KHR;
+		shaderGroups[i].closestHitShader = VK_SHADER_UNUSED_KHR;
+		shaderGroups[i].generalShader = VK_SHADER_UNUSED_KHR;
+		shaderGroups[i].intersectionShader = VK_SHADER_UNUSED_KHR;
+	}
+	shaderGroups[0].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+	shaderGroups[0].generalShader = 0;
+	shaderGroups[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+	shaderGroups[1].generalShader = 1;
+	shaderGroups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+	shaderGroups[2].generalShader = VK_SHADER_UNUSED_KHR;
+	shaderGroups[2].closestHitShader = 2;
+
+	VkPushConstantRange pushConstant{ VK_SHADER_STAGE_RAYGEN_BIT_KHR | 
+		VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+		0, sizeof(PushConstantRay) };
+
+
+	VkPipelineLayoutCreateInfo pipelineLayoutCreateInfo{ 
+		VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO 
+	};
+	pipelineLayoutCreateInfo.pushConstantRangeCount = 1;
+	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
+	pipelineLayoutCreateInfo.setLayoutCount = 1;
+	pipelineLayoutCreateInfo.pSetLayouts = &descriptorSetLayouts[0];
+	vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &layout);
+	VkRayTracingPipelineCreateInfoKHR pipelineInfo{
+		VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR
+	};
+	pipelineInfo.stageCount = stages.size();
+	pipelineInfo.pStages = stages.data();
+	pipelineInfo.groupCount = shaderGroups.size();
+	pipelineInfo.pGroups = shaderGroups.data();
+	pipelineInfo.maxPipelineRayRecursionDepth = 1;
+	pipelineInfo.layout = layout;
+	if (vkCreateRayTracingPipelinesKHR(device, {}, {}, 1,
+		&pipelineInfo, nullptr, &pipeline) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to make ray tracing pipelines in RTSystem.");
+	}
+
+	vkDestroyShaderModule(device, closestHitShaderModule, nullptr);
+	vkDestroyShaderModule(device, missShaderModule, nullptr);
+	vkDestroyShaderModule(device, raygenShaderModule, nullptr);
+}
+
 void RTSystem::createGraphicsPipeline(std::string vertShader,
 	std::string fragShader, VkPipeline& pipeline, VkPipelineLayout& layout,
 	int subpass, VkRenderPass inRenderPass) {
@@ -1159,7 +1238,23 @@ void RTSystem::createGraphicsPipeline(std::string vertShader,
 }
 
 void RTSystem::createGraphicsPipelines() {
+	createRTPipeline("/rayGen.spv", "/miss.spv", "/closestHit.spv", 
+		graphicsPipelineRT, pipelineLayoutRT, 0, renderPass);
+
+	VkPipelineLayoutCreateInfo pipelineLayoutInfoFinal{};
+	pipelineLayoutInfoFinal.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfoFinal.setLayoutCount = 1;
+	pipelineLayoutInfoFinal.pSetLayouts = &descriptorSetLayouts[lightPool.size() + 1];
+	pipelineLayoutInfoFinal.pushConstantRangeCount = 0;
+	pipelineLayoutInfoFinal.pPushConstantRanges = nullptr;
+	if (vkCreatePipelineLayout(device, &pipelineLayoutInfoFinal, nullptr, &pipelineLayoutFinal) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to create pipeline layout in RTSystem.");
+	}
+	createGraphicsPipeline("/vertQuad.spv", "/fragFinal.spv", graphicsPipelineFinal, pipelineLayoutFinal, 1, renderPass);
+
 }
+
+
 
 VkShaderModule RTSystem::createShaderModule(const std::vector<char>& code) {
 	VkShaderModuleCreateInfo createInfo{};
@@ -1784,7 +1879,7 @@ void RTSystem::createDescriptorSets() {
 		throw std::runtime_error("ERROR: Unable to create descriptor sets in Vulkan System. HDR.");
 	}
 
-	std::vector<VkDescriptorSetLayout> layoutsFinal(MAX_FRAMES_IN_FLIGHT, descriptorSetLayouts[lightPool.size() + 1]);
+	std::vector<VkDescriptorSetLayout> layoutsFinal(MAX_FRAMES_IN_FLIGHT * 2);
 	VkDescriptorSetAllocateInfo allocateInfoFinal{};
 	allocateInfoFinal.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocateInfoFinal.descriptorPool = descriptorPoolFinal;
@@ -2011,6 +2106,8 @@ void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t i
 
 
 void RTSystem::updateUniformBuffers(uint32_t frame) {
+
+	//TODO: Do I need to update the image being used in the RT stage? Unsure
 
 	/*
 	//Guided by glm implementation of lookAt
