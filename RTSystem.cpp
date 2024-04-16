@@ -996,7 +996,6 @@ void RTSystem::createRenderPasses() {
 
 void RTSystem::createDescriptorSetLayout() {
 
-
 	descriptorSetLayouts.resize(2);
 
 	VkDescriptorSetLayoutBinding tlasBinding{};
@@ -1238,6 +1237,9 @@ void RTSystem::createGraphicsPipeline(std::string vertShader,
 }
 
 void RTSystem::createGraphicsPipelines() {
+	vkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>
+		(vkGetDeviceProcAddr(device, "vkCreateRayTracingPipelinesKHR"));
+
 	createRTPipeline("/rayGen.spv", "/miss.spv", "/closestHit.spv", 
 		graphicsPipelineRT, pipelineLayoutRT, 0, renderPass);
 

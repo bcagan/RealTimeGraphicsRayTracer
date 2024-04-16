@@ -1191,21 +1191,11 @@ void VulkanSystem::createGraphicsPipelines() {
 	pipelineLayoutInfoHDR.pushConstantRangeCount = 1;
 	pipelineLayoutInfoHDR.pPushConstantRanges = &numLightsConstant;
 
-	VkPipelineLayoutCreateInfo pipelineLayoutInfoFinal{};
-	pipelineLayoutInfoFinal.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfoFinal.setLayoutCount = 1;
-	pipelineLayoutInfoFinal.pSetLayouts = &descriptorSetLayouts[lightPool.size() + 1];
-	pipelineLayoutInfoFinal.pushConstantRangeCount = 0;
-	pipelineLayoutInfoFinal.pPushConstantRanges = nullptr;
-
 
 	if (vkCreatePipelineLayout(device, &pipelineLayoutInfoHDR, nullptr, &pipelineLayoutHDR) != VK_SUCCESS) {
 		throw std::runtime_error("ERROR: Unable to create pipeline layout in VulkanSystems.");
 	}
 
-	if (vkCreatePipelineLayout(device, &pipelineLayoutInfoFinal, nullptr, &pipelineLayoutFinal) != VK_SUCCESS) {
-		throw std::runtime_error("ERROR: Unable to create pipeline layout in VulkanSystems.");
-	}
 
 	if (rawEnvironment.has_value()) {
 		createGraphicsPipeline("/vertEnv.spv", "/fragEnv.spv", graphicsPipeline, pipelineLayoutHDR, subpassCount-2,renderPass);
@@ -1216,7 +1206,21 @@ void VulkanSystem::createGraphicsPipelines() {
 		createGraphicsPipeline("/vert.spv", "/frag.spv", graphicsPipeline, pipelineLayoutHDR, 0, renderPass);
 		createGraphicsPipeline("/vertInst.spv", "/frag.spv", graphicsInstPipeline, pipelineLayoutHDR, 0, renderPass);
 	}
+
+	VkPipelineLayoutCreateInfo pipelineLayoutInfoFinal{};
+	pipelineLayoutInfoFinal.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+	pipelineLayoutInfoFinal.setLayoutCount = 1;
+	pipelineLayoutInfoFinal.pSetLayouts = &descriptorSetLayouts[lightPool.size() + 1];
+	pipelineLayoutInfoFinal.pushConstantRangeCount = 0;
+	pipelineLayoutInfoFinal.pPushConstantRanges = nullptr;
+
+
+
+	if (vkCreatePipelineLayout(device, &pipelineLayoutInfoFinal, nullptr, &pipelineLayoutFinal) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to create pipeline layout in VulkanSystems.");
+	}
 	createGraphicsPipeline("/vertQuad.spv", "/fragFinal.spv", graphicsPipelineFinal, pipelineLayoutFinal, 1, renderPass);
+
 }
 
 VkShaderModule VulkanSystem::createShaderModule(const std::vector<char>& code) {
