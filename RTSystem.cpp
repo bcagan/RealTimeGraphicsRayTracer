@@ -80,10 +80,9 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 	createIndexBuffers();
 	createTransformBuffers();
 	createAccelereationStructures();
-	
+	createDescriptorSetLayout();
 	createRenderPasses();
 	createGraphicsPipelines();
-	createDescriptorSetLayout();
 	createDepthResources();
 	createShaderBindingTable();
 
@@ -197,7 +196,7 @@ void RTSystem::cleanup() {
 		}
 	}
 	vkDestroyDescriptorPool(device, descriptorPoolHDR, nullptr);
-	for (int i = 0; i < lightPool.size() + 2; i++) {
+	for (int i = 0; i < 2; i++) {
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayouts[i], nullptr);
 	}
 	vkDestroyBuffer(device, vertexBuffer, nullptr);
@@ -994,6 +993,125 @@ void RTSystem::createAccelereationStructures() {
 }
 
 void RTSystem::createRenderPasses() {
+	//Offscreen renderpass
+
+	/*
+    //color format
+	//subpass count
+	//clear color
+	// clear depth
+	//init layout
+	//final layout
+	{m_offscreenColorFormat}, m_offscreenDepthFormat, 1, true,
+                                                   true, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
+  }
+	*/
+
+
+
+	VkSubpassDescription offscreenSubpass = {};
+
+	VkAttachmentDescription colorAttachmentOffscreen{};
+	colorAttachmentOffscreen.format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	colorAttachmentOffscreen.samples = VK_SAMPLE_COUNT_1_BIT;
+	colorAttachmentOffscreen.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachmentOffscreen.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachmentOffscreen.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachmentOffscreen.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorAttachmentOffscreen.initialLayout = VK_IMAGE_LAYOUT_GENERAL;
+	colorAttachmentOffscreen.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference colorAttachmentRefOffscreen{};
+	colorAttachmentRefOffscreen.attachment = 0;
+	colorAttachmentRefOffscreen.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+
+
+	offscreenSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	offscreenSubpass.colorAttachmentCount = 1;
+	offscreenSubpass.pColorAttachments = &colorAttachmentRefOffscreen;
+	offscreenSubpass.inputAttachmentCount = 0;
+	offscreenSubpass.pInputAttachments = nullptr;
+
+	//Dependency for offscreen pass
+	VkSubpassDependency offscreenDependency = {};
+	offscreenDependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	offscreenDependency.dstSubpass = 0;
+	offscreenDependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	offscreenDependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	offscreenDependency.srcAccessMask = 0;
+	offscreenDependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+	std::vector<VkAttachmentDescription> offscreenAttachments;
+	offscreenAttachments.push_back(colorAttachmentOffscreen);
+	VkRenderPassCreateInfo offscreenRenderPassInfo{};
+	offscreenRenderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	offscreenRenderPassInfo.attachmentCount = offscreenAttachments.size();
+	offscreenRenderPassInfo.pAttachments = offscreenAttachments.data();
+	offscreenRenderPassInfo.subpassCount = 1;
+	offscreenRenderPassInfo.pSubpasses = &offscreenSubpass;
+	offscreenRenderPassInfo.dependencyCount = 1;
+	offscreenRenderPassInfo.pDependencies = &offscreenDependency;
+
+	if (vkCreateRenderPass(device, &offscreenRenderPassInfo, nullptr, &offscreenPass) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Was unable to create render pass in VulkanSystem.");
+	}
+
+
+
+
+	//Final renderpass
+	VkSubpassDescription finalSubpass = {};
+
+	VkAttachmentDescription colorAttachmentFinal{};
+	colorAttachmentFinal.format = swapChainImageFormat;
+	colorAttachmentFinal.samples = VK_SAMPLE_COUNT_1_BIT;
+	colorAttachmentFinal.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	colorAttachmentFinal.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	colorAttachmentFinal.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	colorAttachmentFinal.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	colorAttachmentFinal.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	colorAttachmentFinal.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+	VkAttachmentReference colorAttachmentRefFinal{};
+	colorAttachmentRefFinal.attachment = 0;
+	colorAttachmentRefFinal.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+
+
+	finalSubpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	finalSubpass.colorAttachmentCount = 1;
+	finalSubpass.pColorAttachments = &colorAttachmentRefFinal;
+	finalSubpass.inputAttachmentCount = 0;
+	finalSubpass.pInputAttachments = nullptr;
+
+	//Dependency for final pass
+	VkSubpassDependency dependency = {};
+	dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+	dependency.dstSubpass = 0;
+	dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependency.dstStageMask = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependency.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+	dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+
+
+	std::vector<VkAttachmentDescription> attachments;
+	attachments.push_back(colorAttachmentFinal);
+	VkRenderPassCreateInfo renderPassInfo{};
+	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	renderPassInfo.attachmentCount = attachments.size();
+	renderPassInfo.pAttachments = attachments.data();
+	renderPassInfo.subpassCount = 1;
+	renderPassInfo.pSubpasses = &finalSubpass;
+	renderPassInfo.dependencyCount = 1;
+	renderPassInfo.pDependencies = &dependency;
+
+	if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Was unable to create render pass in VulkanSystem.");
+	}
+
 }
 
 void RTSystem::createDescriptorSetLayout() {
@@ -1246,12 +1364,12 @@ void RTSystem::createGraphicsPipelines() {
 		(vkGetDeviceProcAddr(device, "vkCreateRayTracingPipelinesKHR"));
 
 	createRTPipeline("/rayGen.spv", "/miss.spv", "/closestHit.spv", 
-		graphicsPipelineRT, pipelineLayoutRT, 0, renderPass);
+		graphicsPipelineRT, pipelineLayoutRT, 0, offscreenPass);
 
 	VkPipelineLayoutCreateInfo pipelineLayoutInfoFinal{};
 	pipelineLayoutInfoFinal.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 	pipelineLayoutInfoFinal.setLayoutCount = 1;
-	pipelineLayoutInfoFinal.pSetLayouts = &descriptorSetLayouts[lightPool.size() + 1];
+	pipelineLayoutInfoFinal.pSetLayouts = &descriptorSetLayouts[1];
 	pipelineLayoutInfoFinal.pushConstantRangeCount = 0;
 	pipelineLayoutInfoFinal.pPushConstantRanges = nullptr;
 	if (vkCreatePipelineLayout(device, &pipelineLayoutInfoFinal, nullptr, &pipelineLayoutFinal) != VK_SUCCESS) {
