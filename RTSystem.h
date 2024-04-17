@@ -131,6 +131,7 @@ private:
 	void createGraphicsPipelines();
 	void createRenderPasses();
 	VkShaderModule createShaderModule(const std::vector<char>& shader);
+	void createShaderBindingTable();
 	void createFramebuffers();
 	VkCommandBuffer beginSingleTimeCommands();
 	void endSingleTimeCommands(VkCommandBuffer commandBuffer);
@@ -230,6 +231,7 @@ private:
 	PFN_vkGetBufferDeviceAddress vkGetBufferDeviceAddress;
 	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
 	PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
+	PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
 	std::vector<AS> blas;
 	AS tlas;
 	std::vector<VkAccelerationStructureInstanceKHR> tlasInstances;
@@ -298,6 +300,12 @@ private:
 	VkPhysicalDeviceRayTracingPipelinePropertiesKHR 
 		rtProperties{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR };
 	std::array< VkRayTracingShaderGroupCreateInfoKHR,3> shaderGroups;
+	VkBuffer sbtBuffer;
+	VkDeviceMemory sbtMemory;
+	VkStridedDeviceAddressRegionKHR rgenRegion{};
+	VkStridedDeviceAddressRegionKHR missRegion{};
+	VkStridedDeviceAddressRegionKHR hitRegion{};
+	VkStridedDeviceAddressRegionKHR callRegion{};
 
 	// Push constant structure for the ray tracer
 	struct PushConstantRay

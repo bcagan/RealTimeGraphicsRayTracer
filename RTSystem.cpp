@@ -80,13 +80,15 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 	createIndexBuffers();
 	createTransformBuffers();
 	createAccelereationStructures();
-
-	createDescriptorSetLayout();
-	createDepthResources();
 	
-	/*
 	createRenderPasses();
 	createGraphicsPipelines();
+	createDescriptorSetLayout();
+	createDepthResources();
+	createShaderBindingTable();
+
+	
+	/*
 	createFramebuffers();
 	createTextureImages();
 	createUniformBuffers();
@@ -1102,7 +1104,9 @@ void RTSystem::createRTPipeline(
 	pipelineLayoutCreateInfo.pPushConstantRanges = &pushConstant;
 	pipelineLayoutCreateInfo.setLayoutCount = 1;
 	pipelineLayoutCreateInfo.pSetLayouts = &descriptorSetLayouts[0];
-	vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &layout);
+	if (vkCreatePipelineLayout(device, &pipelineLayoutCreateInfo, nullptr, &layout) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to create rt pipeline layout in  RTSystem.");
+	}
 	VkRayTracingPipelineCreateInfoKHR pipelineInfo{
 		VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR
 	};
@@ -1237,7 +1241,8 @@ void RTSystem::createGraphicsPipeline(std::string vertShader,
 }
 
 void RTSystem::createGraphicsPipelines() {
-	vkCreateRayTracingPipelinesKHR = reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>
+	vkCreateRayTracingPipelinesKHR =
+		reinterpret_cast<PFN_vkCreateRayTracingPipelinesKHR>
 		(vkGetDeviceProcAddr(device, "vkCreateRayTracingPipelinesKHR"));
 
 	createRTPipeline("/rayGen.spv", "/miss.spv", "/closestHit.spv", 
@@ -1269,6 +1274,89 @@ VkShaderModule RTSystem::createShaderModule(const std::vector<char>& code) {
 		throw std::runtime_error("ERROR: Failed to create a shader module in RTSystem.");
 	}
 	return shaderModule;
+}
+
+void RTSystem::createShaderBindingTable() {
+	vkGetRayTracingShaderGroupHandlesKHR = 
+		reinterpret_cast<PFN_vkGetRayTracingShaderGroupHandlesKHR>
+		(vkGetDeviceProcAddr(device, "vkGetRayTracingShaderGroupHandlesKHR"));
+
+
+	//Define shader group information
+	auto align = [](auto size, auto alignment) {
+		return (size + alignment - 1) & (~(alignment - 1));
+	};
+	uint32_t missCount = 1;
+	uint32_t hitCount = 1;
+	uint32_t raygenCount = 1; //Always 1
+	uint32_t handleCount = missCount + hitCount + raygenCount;
+	uint32_t handleSize = rtProperties.shaderGroupHandleSize;
+	uint32_t handleAlignment = rtProperties.shaderGroupHandleAlignment;
+	uint32_t baseAlignment = rtProperties.shaderGroupBaseAlignment;
+	uint32_t handleSizeAligned = align(handleSize, handleAlignment);
+	rgenRegion.stride = align(handleSizeAligned, baseAlignment);
+	rgenRegion.size = rgenRegion.stride;
+	missRegion.stride = handleSizeAligned;
+	missRegion.size = align(missCount * handleSizeAligned, baseAlignment);
+	hitRegion.stride = handleSizeAligned;
+	hitRegion.size = align(hitCount * handleSizeAligned, baseAlignment);
+
+	uint32_t handleDataSize = handleCount * handleSize;
+	std::vector<uint8_t> handles(handleDataSize);
+	if (vkGetRayTracingShaderGroupHandlesKHR(device, graphicsPipelineRT,
+		0, handleCount, handleDataSize, handles.data()) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to get rt shader group handles in RTSystem.");
+	}
+
+	//Create buffer
+	VkDeviceSize bufferSize =
+		rgenRegion.size +
+		missRegion.size +
+		hitRegion.size +
+		callRegion.size;
+	createBuffer(bufferSize,
+		VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR,
+		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+		sbtBuffer, sbtMemory, true);
+
+	VkBufferDeviceAddressInfo addressInfo{
+		VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,nullptr,sbtBuffer
+	};
+	VkDeviceAddress sbtAddress = vkGetBufferDeviceAddress(device, &addressInfo);
+	rgenRegion.deviceAddress = sbtAddress;
+	missRegion.deviceAddress = rgenRegion.deviceAddress + rgenRegion.size;
+	hitRegion.deviceAddress = missRegion.deviceAddress + missRegion.size;
+
+	//Helper function as recomended by the nvpro tutorial
+	auto getHandle = [&](int i) { return handles.data() + i * handleSize; };
+
+	void* data;
+	vkMapMemory(device, sbtMemory, 0, bufferSize, 0, &data);
+	uint8_t* sbtData = reinterpret_cast<uint8_t*>(data);
+
+	uint8_t* variableData{ nullptr };
+	uint32_t handleIndex = 0;
+	variableData = sbtData;
+	memcpy(variableData, getHandle(handleIndex), handleSize);
+	handleIndex++;
+	variableData = sbtData + rgenRegion.size;
+	for (uint32_t miss = 0; miss < missCount; miss++) {
+		memcpy(variableData, getHandle(handleIndex), handleSize);
+		variableData += missRegion.stride;
+		handleIndex++;
+	}
+	variableData = sbtData + rgenRegion.size + missRegion.size;
+	for (uint32_t hit = 0; hit < hitCount; hit++) {
+		memcpy(variableData, getHandle(handleIndex), handleSize);
+		variableData += hitRegion.stride;
+		handleIndex++;
+	}
+
+	vkUnmapMemory(device, sbtMemory);
+
 }
 
 void RTSystem::createFramebuffers() {
