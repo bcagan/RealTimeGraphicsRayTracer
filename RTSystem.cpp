@@ -73,7 +73,7 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 	pickPhysicalDevice();
 	createLogicalDevice();
 	createSwapChain();
-	createAttachments();
+	createStorageImages();
 	createImageViews();
 	createCommands();
 	createVertexBuffer();
@@ -83,16 +83,12 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 	createDescriptorSetLayout();
 	createRenderPasses();
 	createGraphicsPipelines();
-	createDepthResources();
 	createShaderBindingTable();
-
-	
-	/*
 	createFramebuffers();
 	createTextureImages();
 	createUniformBuffers();
 	createDescriptorPool();
-	createDescriptorSets();*/
+	createDescriptorSets();
 	
 
 	if (renderToWindow) {
@@ -626,19 +622,44 @@ int32_t RTSystem::getMemoryType(VkImage image) {
 	throw std::runtime_error("ERROR: Unable to find suitable memory type in RTSystem.");
 }
 
-void RTSystem::createAttachments() {
+void RTSystem::createStorageImages() {
 	VkExtent2D extent;
 	extent.width = mainWindow->resolution.first;
 	extent.height = mainWindow->resolution.second;
-	attachmentImages.resize(swapChainImages.size());
-	attachmentMemorys.resize(swapChainImages.size());
+	rtImages.resize(swapChainImages.size());
+	rtImageMemorys.resize(swapChainImages.size());
+	rtSamplers.resize(swapChainImages.size());
 
 	for (size_t image = 0; image < swapChainImages.size(); image++) {
 		createImage(extent.width, extent.height, VK_FORMAT_R32G32B32A32_SFLOAT,
-			VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-			| VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT, 0,
-			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, attachmentImages[image],
-			attachmentMemorys[image]);
+			VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_STORAGE_BIT
+			| VK_IMAGE_USAGE_SAMPLED_BIT, 0,
+			VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, rtImages[image],
+			rtImageMemorys[image]);
+
+		VkPhysicalDeviceProperties properties{};
+		vkGetPhysicalDeviceProperties(physicalDevice, &properties);
+		VkSamplerCreateInfo samplerInfo{};
+		samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		samplerInfo.magFilter = VK_FILTER_LINEAR;
+		samplerInfo.minFilter = VK_FILTER_LINEAR;
+		samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+		samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+		samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+		samplerInfo.anisotropyEnable = VK_TRUE;
+		samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy; //TODO: make this variable
+		samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_WHITE;
+		samplerInfo.unnormalizedCoordinates = VK_FALSE;
+		samplerInfo.compareEnable = VK_FALSE;
+		samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+		samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		samplerInfo.mipLodBias = 0.f;
+		samplerInfo.minLod = 0;
+		samplerInfo.maxLod = 0;
+
+		if (vkCreateSampler(device, &samplerInfo, nullptr, &rtSamplers[image]) != VK_SUCCESS) {
+			throw std::runtime_error("ERROR: Unable to create a sampler in VulkanSystem.");
+		}
 	}
 }
 
@@ -650,11 +671,11 @@ void RTSystem::createImageViews() {
 		swapChainImageViews[imageIndex] = createImageView(
 			swapChainImages[imageIndex], swapChainImageFormat);
 	}
-	attachmentImageViews.resize(attachmentImages.size());
-	for (size_t imageIndex = 0; imageIndex < attachmentImages.size();
+	rtImageViews.resize(rtImages.size());
+	for (size_t imageIndex = 0; imageIndex < rtImages.size();
 		imageIndex++) {
-		attachmentImageViews[imageIndex] = createImageView(
-			attachmentImages[imageIndex], VK_FORMAT_R32G32B32A32_SFLOAT);
+		rtImageViews[imageIndex] = createImageView(
+			rtImages[imageIndex], VK_FORMAT_R32G32B32A32_SFLOAT);
 	}
 }
 
@@ -1472,9 +1493,7 @@ void RTSystem::createFramebuffers() {
 	for (size_t image = 0; image < swapChainImageViews.size(); image++) {
 		std::vector<VkImageView> attachments;
 		attachments.push_back(swapChainImageViews[image]);
-		attachments.push_back(depthImageView);
-		attachments.push_back(attachmentImageViews[image]);
-
+		
 		VkFramebufferCreateInfo framebufferInfo{};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		framebufferInfo.renderPass = renderPass;
@@ -1487,6 +1506,9 @@ void RTSystem::createFramebuffers() {
 			&(swapChainFramebuffers[image])) != VK_SUCCESS) {
 			throw std::runtime_error("ERROR: Unable to create a framebuffer in RTSystem.");
 		}
+
+		attachments.clear();
+
 	}
 }
 
@@ -2031,13 +2053,13 @@ void RTSystem::createUniformBuffers(bool realloc) {
 
 void RTSystem::createDescriptorPool() {
 
-	std::array<VkDescriptorPoolSize, 2> poolSizesHDR{};
-	poolSizesHDR[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSizesHDR[0].descriptorCount = 2;
+	VkDescriptorPoolSize poolSizeHDR{};
+	poolSizeHDR.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	poolSizeHDR.descriptorCount = 2;
 	VkDescriptorPoolCreateInfo poolInfoHDR{};
 	poolInfoHDR.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-	poolInfoHDR.poolSizeCount = poolSizesHDR.size();
-	poolInfoHDR.pPoolSizes = poolSizesHDR.data();
+	poolInfoHDR.poolSizeCount = 1;
+	poolInfoHDR.pPoolSizes = &poolSizeHDR;
 	poolInfoHDR.maxSets = MAX_FRAMES_IN_FLIGHT;
 	if (vkCreateDescriptorPool(device, &poolInfoHDR, nullptr, &descriptorPoolHDR)
 		!= VK_SUCCESS) {
@@ -2045,7 +2067,7 @@ void RTSystem::createDescriptorPool() {
 	}
 	VkDescriptorPoolSize poolSizeFinal{};
 	poolSizeFinal.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-	poolSizeFinal.descriptorCount = MAX_FRAMES_IN_FLIGHT;
+	poolSizeFinal.descriptorCount = 1;
 	VkDescriptorPoolCreateInfo poolInfoFinal{};
 	poolInfoFinal.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfoFinal.poolSizeCount = 1;
@@ -2064,8 +2086,7 @@ void RTSystem::createDescriptorSets() {
 
 
 
-	std::vector<VkDescriptorSetLayout> layoutsHDR(MAX_FRAMES_IN_FLIGHT *
-		2);
+	std::vector<VkDescriptorSetLayout> layoutsHDR(MAX_FRAMES_IN_FLIGHT, descriptorSetLayouts[0]);
 	VkDescriptorSetAllocateInfo allocateInfoHDR{};
 	allocateInfoHDR.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocateInfoHDR.descriptorPool = descriptorPoolHDR;
@@ -2077,7 +2098,7 @@ void RTSystem::createDescriptorSets() {
 		throw std::runtime_error("ERROR: Unable to create descriptor sets in Vulkan System. HDR.");
 	}
 
-	std::vector<VkDescriptorSetLayout> layoutsFinal(MAX_FRAMES_IN_FLIGHT * 2);
+	std::vector<VkDescriptorSetLayout> layoutsFinal(MAX_FRAMES_IN_FLIGHT, descriptorSetLayouts[1]);
 	VkDescriptorSetAllocateInfo allocateInfoFinal{};
 	allocateInfoFinal.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocateInfoFinal.descriptorPool = descriptorPoolFinal;
@@ -2096,7 +2117,7 @@ void RTSystem::createDescriptorSets() {
 		VkWriteDescriptorSetAccelerationStructureKHR tlasDescriptor{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR };
 		tlasDescriptor.accelerationStructureCount = 1;
 		tlasDescriptor.pAccelerationStructures = &tlas.acc;
-		VkDescriptorImageInfo imageDescriptor{ {}, attachmentImageViews[frame], VK_IMAGE_LAYOUT_GENERAL};
+		VkDescriptorImageInfo imageDescriptor{ {}, rtImageViews[frame], VK_IMAGE_LAYOUT_GENERAL};
 
 
 		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(2);
@@ -2109,7 +2130,7 @@ void RTSystem::createDescriptorSets() {
 		writeDescriptorSets[0].dstArrayElement = 0;
 		writeDescriptorSets[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writeDescriptorSets[1].dstSet = descriptorSetsHDR[frame];
-		writeDescriptorSets[1].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		writeDescriptorSets[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
 		writeDescriptorSets[1].descriptorCount = 1;
 		writeDescriptorSets[1].dstBinding = 1;
 		writeDescriptorSets[1].pImageInfo = &imageDescriptor;
@@ -2122,13 +2143,13 @@ void RTSystem::createDescriptorSets() {
 	for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
 		VkDescriptorImageInfo finalDescriptor{};
 		finalDescriptor.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		finalDescriptor.imageView = attachmentImageViews[frame];
-		finalDescriptor.sampler = VK_NULL_HANDLE;
+		finalDescriptor.imageView = rtImageViews[frame];
+		finalDescriptor.sampler = rtSamplers[frame];
 
 		VkWriteDescriptorSet writeDescriptorSet{};
 		writeDescriptorSet.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writeDescriptorSet.dstSet = descriptorSetsFinal[frame];
-		writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		writeDescriptorSet.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		writeDescriptorSet.descriptorCount = 1;
 		writeDescriptorSet.dstBinding = 0;
 		writeDescriptorSet.pImageInfo = &finalDescriptor;
@@ -2193,15 +2214,6 @@ void RTSystem::createImage(uint32_t width, uint32_t height, VkFormat format,
 		throw std::runtime_error("ERROR: Unable to allocate an image memory in Vulkan System!");
 	}
 	vkBindImageMemory(device, image, imageMemory, 0);
-}
-
-void RTSystem::createDepthResources() {
-	VkFormat depthFormat = VK_FORMAT_D32_SFLOAT;
-	createImage(swapChainExtent.width, swapChainExtent.height, depthFormat,
-		VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, 0,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory);
-	depthImageView = createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-	VkFormat shadowDepthFormat = VK_FORMAT_D16_UNORM;
 }
 
 void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {/*
@@ -2544,7 +2556,6 @@ void RTSystem::recreateSwapChain() {
 		cleanupSwapChain();
 		createSwapChain();
 		createImageViews();
-		createDepthResources();
 		createFramebuffers();
 	}
 }

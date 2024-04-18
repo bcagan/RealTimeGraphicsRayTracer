@@ -86,7 +86,7 @@ private:
 	void pickPhysicalDevice();
 	void createLogicalDevice();
 	int32_t getMemoryType(VkImage image);
-	void createAttachments();
+	void createStorageImages();
 	void createSwapChain();
 	VkImageView createImageView(VkImage image, VkFormat format,
 		VkImageAspectFlags aspectFlags = VK_IMAGE_ASPECT_COLOR_BIT,
@@ -154,7 +154,6 @@ private:
 	void createTextureImages();
 	void createUniformBuffers(bool realoc = true);
 	void createDescriptorPool();
-	void createDepthResources();
 	void createDescriptorSets();
 	void createCommands();
 	void recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
@@ -193,7 +192,6 @@ private:
 	QueueFamilyIndices familyIndices;
 	//Pipeline
 	std::vector<VkDeviceMemory> attachmentMemorys;
-	std::vector<VkImageView> attachmentImageViews;
 	VkPipelineLayout pipelineLayoutRT;
 	VkPipelineLayout pipelineLayoutFinal;
 	VkPipeline graphicsPipelineRT;
@@ -203,18 +201,18 @@ private:
 	VkQueue presentQueue;
 	VkSwapchainKHR swapChain;
 	std::vector<VkImage> swapChainImages;
-	std::vector<VkImage> attachmentImages;
+	std::vector<VkImage> rtImages;
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
 	std::vector<VkImageView> swapChainImageViews;
+	std::vector<VkImageView> rtImageViews;
+	std::vector<VkDeviceMemory> rtImageMemorys;
+	std::vector<VkSampler> rtSamplers;
 	VkRenderPass renderPass;
 	VkRenderPass offscreenPass;
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
-	VkImage depthImage;
-	VkDeviceMemory depthImageMemory;
-	VkImageView depthImageView;
 	//Vertices
 	VkBuffer vertexBuffer;
 	bool useVertexBuffer;
