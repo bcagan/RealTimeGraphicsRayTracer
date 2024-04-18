@@ -9,6 +9,7 @@ C:/VulkanSDK/1.3.268.0/Bin/glslc.exe shaderShadow.frag -o fragShadow.spv
 C:/VulkanSDK/1.3.268.0/Bin/glslc.exe shader.frag -o frag.spv
 C:/VulkanSDK/1.3.268.0/Bin/glslc.exe shaderEnv.frag -o fragEnv.spv
 C:/VulkanSDK/1.3.268.0/Bin/glslc.exe fragFinal.frag -o fragFinal.spv
+C:/VulkanSDK/1.3.268.0/Bin/glslc.exe rtFinal.frag -o rtFinal.spv
 C:/VulkanSDK/1.3.268.0/Bin/glslc.exe --target-spv=spv1.6 raytraceEXAMPLE.rgen -o rayGen.spv
 C:/VulkanSDK/1.3.268.0/Bin/glslc.exe --target-spv=spv1.6 raytraceEXAMPLE.rmiss -o miss.spv
 C:/VulkanSDK/1.3.268.0/Bin/glslc.exe --target-spv=spv1.6 raytraceEXAMPLE.rchit -o closestHit.spv

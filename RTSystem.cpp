@@ -501,15 +501,19 @@ void RTSystem::createLogicalDevice() {
 	VkPhysicalDeviceFeatures2 phyDeviceFeatures = {};
 	VkPhysicalDeviceVulkan12Features deviceFeatures = {};
 	VkPhysicalDeviceAccelerationStructureFeaturesKHR accFeatures{};
+	VkPhysicalDeviceRayTracingPipelineFeaturesKHR pipelineFeatures{};
+	pipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
 	accFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
 	phyDeviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR;
 	deviceFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES;
+	accFeatures.pNext = &pipelineFeatures;
 	deviceFeatures.pNext = &accFeatures;
 	phyDeviceFeatures.pNext = &deviceFeatures;
 	vkGetPhysicalDeviceFeatures2(physicalDevice, &phyDeviceFeatures);
 	deviceFeatures.bufferDeviceAddress = VK_TRUE;
 	phyDeviceFeatures.features.samplerAnisotropy = VK_TRUE;
 	accFeatures.accelerationStructure = VK_TRUE;
+	pipelineFeatures.rayTracingPipeline = VK_TRUE;
 	createInfo.pNext = &phyDeviceFeatures;
 	createInfo.pEnabledFeatures = nullptr;
 	if (enableValidationLayers) {
@@ -993,20 +997,6 @@ void RTSystem::createAccelereationStructures() {
 }
 
 void RTSystem::createRenderPasses() {
-	//Offscreen renderpass
-
-	/*
-    //color format
-	//subpass count
-	//clear color
-	// clear depth
-	//init layout
-	//final layout
-	{m_offscreenColorFormat}, m_offscreenDepthFormat, 1, true,
-                                                   true, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_GENERAL);
-  }
-	*/
-
 
 
 	VkSubpassDescription offscreenSubpass = {};
@@ -1096,12 +1086,11 @@ void RTSystem::createRenderPasses() {
 	dependency.dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
 
-
 	std::vector<VkAttachmentDescription> attachments;
 	attachments.push_back(colorAttachmentFinal);
 	VkRenderPassCreateInfo renderPassInfo{};
 	renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	renderPassInfo.attachmentCount = attachments.size();
+	renderPassInfo.attachmentCount = 1;
 	renderPassInfo.pAttachments = attachments.data();
 	renderPassInfo.subpassCount = 1;
 	renderPassInfo.pSubpasses = &finalSubpass;
@@ -1147,9 +1136,10 @@ void RTSystem::createDescriptorSetLayout() {
 	VkDescriptorSetLayoutBinding hdrBinding{};
 	hdrBinding.binding = 0;
 	hdrBinding.descriptorCount = 1;
-	hdrBinding.descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+	hdrBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 	hdrBinding.pImmutableSamplers = nullptr;
 	hdrBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
 
 	VkDescriptorSetLayoutCreateInfo layoutInfoFinal{};
 	layoutInfoFinal.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1375,7 +1365,7 @@ void RTSystem::createGraphicsPipelines() {
 	if (vkCreatePipelineLayout(device, &pipelineLayoutInfoFinal, nullptr, &pipelineLayoutFinal) != VK_SUCCESS) {
 		throw std::runtime_error("ERROR: Unable to create pipeline layout in RTSystem.");
 	}
-	createGraphicsPipeline("/vertQuad.spv", "/fragFinal.spv", graphicsPipelineFinal, pipelineLayoutFinal, 1, renderPass);
+	createGraphicsPipeline("/vertQuad.spv", "/rtFinal.spv", graphicsPipelineFinal, pipelineLayoutFinal, 0, renderPass);
 
 }
 
