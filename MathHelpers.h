@@ -988,7 +988,7 @@ template<typename T> struct mat44 {
 			data[3][j] = x3[j];
 		}
 	}
-	mat44<T> identity() {
+	static mat44<T> identity() {
 		return mat44<T>(1);
 	}
 	mat44<T> transpose() {

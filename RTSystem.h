@@ -156,8 +156,8 @@ private:
 	void createDescriptorPool();
 	void createDescriptorSets();
 	void createCommands();
+	void raytrace(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
-	void submitFrame(size_t frameIndex, uint32_t imageIndex, bool draw);
 	void updateUniformBuffers(uint32_t frame);
 	void createImage(uint32_t width, uint32_t height, VkFormat format,
 		VkImageTiling tiling, VkImageUsageFlags usage, VkImageCreateFlags flags,
@@ -174,11 +174,7 @@ private:
 
 
 	struct PushConst {
-		int numLights;
-		float camPosX;
-		float camPosY;
-		float camPosZ;
-		float pbrP;
+		mat44<float> camera;
 	};
 	PushConst pushConstHDR;
 
@@ -221,8 +217,8 @@ private:
 	std::vector<VkDeviceMemory> meshIndexBufferMemorys;
 	std::vector<VkBuffer> meshTransformBuffers;
 	std::vector<VkDeviceMemory> meshTransformMemorys;
-	//Acceleration Structures
 
+	//Acceleration Structures
 	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;
 	PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteAccelerationStructuresPropertiesKHR;
 	PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR;
@@ -231,6 +227,7 @@ private:
 	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR;
 	PFN_vkCreateRayTracingPipelinesKHR vkCreateRayTracingPipelinesKHR;
 	PFN_vkGetRayTracingShaderGroupHandlesKHR vkGetRayTracingShaderGroupHandlesKHR;
+	PFN_vkCmdTraceRaysKHR vkCmdTraceRaysKHR;
 	std::vector<AS> blas;
 	AS tlas;
 	std::vector<VkAccelerationStructureInstanceKHR> tlasInstances;

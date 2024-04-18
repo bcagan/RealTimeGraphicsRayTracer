@@ -107,10 +107,12 @@ void Mode::handleinputEvent(InputEvent inputEvent) {
 
 //Main render loop
 //Camera implementation guided by https://learnopengl.com/Getting-started/Camera
-void Mode::mainLoop(SceneGraph* graph) {
+void Mode::mainLoop(SceneGraph* graph, bool rt) {
 	int framecount = 0;
 	float mscount = 0;
-	vulkanSystem.activeP = &active;
+	if (rt) rtSystem.activeP = &active;
+	else vulkanSystem.activeP = &active;
+	
 	float yaw = 0; float pitch = 0;
 	float yawDebug = 0; float pitchDebug = 0;
 	while (active) {
@@ -122,72 +124,95 @@ void Mode::mainLoop(SceneGraph* graph) {
 			delta = std::chrono::duration<float>(now - lastFrame).count();
 		}
 		lastFrame = now;
-		if (vulkanSystem.renderToWindow) {
-			float_3 moveVec = vulkanSystem.movementMode == MOVE_DEBUG ? vulkanSystem.debugMoveVec : vulkanSystem.moveVec;
-			if (vulkanSystem.movementMode != MOVE_STATIC) {
-				float x = (moveStatus.left * 1 + moveStatus.right * -1) * delta * speed;
-				float z = (moveStatus.forward * 1 + moveStatus.backward * -1) * delta * speed;
-				float y = (moveStatus.up * 1 + moveStatus.down * -1) * delta * speed;
-				moveVec = moveVec + float_3(x, y, z);
-			}
+		if (!rt) {
 
-			float_3 dirVec;
-			if (vulkanSystem.movementMode == MOVE_DEBUG) {
-				float moveFactor = 10;
-				yawDebug += delta * moveStatus.mouseDelta.first * moveFactor;
-				pitchDebug -= delta * moveStatus.mouseDelta.second * moveFactor;
-				if (pitchDebug > 179.9) pitchDebug = 179.9; if (pitchDebug < -179.9) pitchDebug = -179.9;
-				if (yawDebug > 89.9) yawDebug = 89.9; if (yawDebug < -89.9) yawDebug = -89.9;
-				float dirX = cos(radians(yawDebug)) * cos(radians(pitchDebug));
-				float dirY = sin(radians(pitchDebug));
-				float dirZ = sin(radians(yawDebug)) * cos(radians(pitchDebug));
-				dirVec = float_3(dirX, dirY, dirZ);
-				moveStatus.mouseDelta.first = 0;
-				moveStatus.mouseDelta.second = 0;
-			}
-			else{
-				if (vulkanSystem.movementMode == MOVE_USER) {
-					float moveFactor = 10;
-					yaw += delta * moveStatus.mouseDelta.first * moveFactor;
-					pitch -= delta * moveStatus.mouseDelta.second * moveFactor;
-					if (pitch > 89.9) pitch = 89.9; if (pitch < -89.9) pitch = -89.9;
-					if (yaw > 89.9) yaw = 89.9; if (yaw < -89.9) yaw = -89.9;
+			if (vulkanSystem.renderToWindow) {
+				float_3 moveVec = vulkanSystem.movementMode == MOVE_DEBUG ? vulkanSystem.debugMoveVec : vulkanSystem.moveVec;
+				if (vulkanSystem.movementMode != MOVE_STATIC) {
+					float x = (moveStatus.left * 1 + moveStatus.right * -1) * delta * speed;
+					float z = (moveStatus.forward * 1 + moveStatus.backward * -1) * delta * speed;
+					float y = (moveStatus.up * 1 + moveStatus.down * -1) * delta * speed;
+					moveVec = moveVec + float_3(x, y, z);
 				}
-				float dirX = cos(radians(yaw)) * cos(radians(pitch));
-				float dirY = sin(radians(pitch));
-				float dirZ = sin(radians(yaw)) * cos(radians(pitch));
-				dirVec = float_3(dirX, dirY, dirZ);
-				moveStatus.mouseDelta.first = 0;
-				moveStatus.mouseDelta.second = 0;
-			}
-			if (vulkanSystem.movementMode == MOVE_DEBUG) {
-				vulkanSystem.debugDirVec = dirVec;
-				vulkanSystem.debugMoveVec = moveVec;
+
+				float_3 dirVec;
+				if (vulkanSystem.movementMode == MOVE_DEBUG) {
+					float moveFactor = 10;
+					yawDebug += delta * moveStatus.mouseDelta.first * moveFactor;
+					pitchDebug -= delta * moveStatus.mouseDelta.second * moveFactor;
+					if (pitchDebug > 179.9) pitchDebug = 179.9; if (pitchDebug < -179.9) pitchDebug = -179.9;
+					if (yawDebug > 89.9) yawDebug = 89.9; if (yawDebug < -89.9) yawDebug = -89.9;
+					float dirX = cos(radians(yawDebug)) * cos(radians(pitchDebug));
+					float dirY = sin(radians(pitchDebug));
+					float dirZ = sin(radians(yawDebug)) * cos(radians(pitchDebug));
+					dirVec = float_3(dirX, dirY, dirZ);
+					moveStatus.mouseDelta.first = 0;
+					moveStatus.mouseDelta.second = 0;
+				}
+				else {
+					if (vulkanSystem.movementMode == MOVE_USER) {
+						float moveFactor = 10;
+						yaw += delta * moveStatus.mouseDelta.first * moveFactor;
+						pitch -= delta * moveStatus.mouseDelta.second * moveFactor;
+						if (pitch > 89.9) pitch = 89.9; if (pitch < -89.9) pitch = -89.9;
+						if (yaw > 89.9) yaw = 89.9; if (yaw < -89.9) yaw = -89.9;
+					}
+					float dirX = cos(radians(yaw)) * cos(radians(pitch));
+					float dirY = sin(radians(pitch));
+					float dirZ = sin(radians(yaw)) * cos(radians(pitch));
+					dirVec = float_3(dirX, dirY, dirZ);
+					moveStatus.mouseDelta.first = 0;
+					moveStatus.mouseDelta.second = 0;
+				}
+				if (vulkanSystem.movementMode == MOVE_DEBUG) {
+					vulkanSystem.debugDirVec = dirVec;
+					vulkanSystem.debugMoveVec = moveVec;
+				}
+				else {
+					vulkanSystem.moveVec = moveVec;
+					vulkanSystem.dirVec = dirVec;
+				}
 			}
 			else {
-				vulkanSystem.moveVec = moveVec;
-				vulkanSystem.dirVec = dirVec;
+				events.handleEventsQueue(delta);
+			}
+
+			//Update frame
+
+			std::chrono::high_resolution_clock::time_point start =
+				std::chrono::high_resolution_clock::now();
+			vulkanSystem.drawFrame();
+			if (animate) vulkanSystem.runDrivers(1 / 60.f, graph, true);
+			std::chrono::high_resolution_clock::time_point end =
+				std::chrono::high_resolution_clock::now();
+			mscount += std::chrono::duration_cast<std::chrono::milliseconds>(
+				end - start).count();
+			framecount++;
+			if (verbose && framecount == 1000) {
+				std::cout << "MEASURE frametime (avg of 1000 frames): " << (float)
+					mscount / 1000.f << "ms" << std::endl;
+				mscount = 0;
+				framecount = 0;
 			}
 		}
 		else {
-			events.handleEventsQueue(delta);
-		}
-		//Update frame
 
-		std::chrono::high_resolution_clock::time_point start =
-			std::chrono::high_resolution_clock::now();
-		vulkanSystem.drawFrame();
-		if(animate) vulkanSystem.runDrivers(1 / 60.f, graph, true);
-		std::chrono::high_resolution_clock::time_point end =
-			std::chrono::high_resolution_clock::now();
-		mscount += std::chrono::duration_cast<std::chrono::milliseconds>(
-			end - start).count();
-		framecount++;
-		if (verbose && framecount == 1000) {
-			std::cout << "MEASURE frametime (avg of 1000 frames): " << (float)
-				mscount / 1000.f << "ms" << std::endl;
-			mscount = 0;
-			framecount = 0;
+			//Update frame
+
+			std::chrono::high_resolution_clock::time_point start =
+				std::chrono::high_resolution_clock::now();
+			rtSystem.drawFrame();
+			std::chrono::high_resolution_clock::time_point end =
+				std::chrono::high_resolution_clock::now();
+			mscount += std::chrono::duration_cast<std::chrono::milliseconds>(
+				end - start).count();
+			framecount++;
+			if (verbose && framecount == 1000) {
+				std::cout << "MEASURE frametime (avg of 1000 frames): " << (float)
+					mscount / 1000.f << "ms" << std::endl;
+				mscount = 0;
+				framecount = 0;
+			}
 		}
 	}
 
@@ -298,17 +323,11 @@ int Mode::modeMain() {
 	movementMode = MovementMode::MOVE_USER;
 	rtSystem.movementMode = movementMode;
 	rtSystem.renderToWindow = true;
-	/*
-	//Handle headless mode
-	if (!rtSystem.renderToWindow) {
-		events = parser.parseEvents(eventName);
-		events.vulkanSystemP = &rtSystem;
-	}
 
 	//Begin running main loop
-	mainLoop(&graph);
+	mainLoop(&graph,true);
 
 	//Clean up vulkan
-	//rtSyste,.cleanup();*/
+	//rtSystem.cleanup();
 	return 0;
 }

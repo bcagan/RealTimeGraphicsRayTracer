@@ -46,7 +46,7 @@ public:
 private:
 	VulkanSystem vulkanSystem;
 	RTSystem rtSystem;
-	void mainLoop(SceneGraph* graph);
+	void mainLoop(SceneGraph* graph, bool rt = false);
 	MoveStatus moveStatus;
 	std::chrono::high_resolution_clock::time_point lastFrame;
 	std::pair<int, int> lastMousePos;

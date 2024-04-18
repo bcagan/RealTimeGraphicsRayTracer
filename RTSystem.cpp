@@ -1012,6 +1012,9 @@ void RTSystem::createAccelereationStructures() {
 	vkGetAccelerationStructureDeviceAddressKHR =
 		reinterpret_cast<PFN_vkGetAccelerationStructureDeviceAddressKHR>
 		(vkGetDeviceProcAddr(device,"vkGetAccelerationStructureDeviceAddressKHR"));
+	vkCmdTraceRaysKHR =
+		reinterpret_cast<PFN_vkCmdTraceRaysKHR>
+		(vkGetDeviceProcAddr(device, "vkCmdTraceRaysKHR"));
 
 	createBLAccelereationStructures(VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR);
 	createTLAccelereationStructures();
@@ -2159,7 +2162,7 @@ void RTSystem::createDescriptorSets() {
 }
 
 void RTSystem::createCommands() {
-	commandBuffers.resize((1 + lightPool.size()) * MAX_FRAMES_IN_FLIGHT);
+	commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -2216,7 +2219,31 @@ void RTSystem::createImage(uint32_t width, uint32_t height, VkFormat format,
 	vkBindImageMemory(device, image, imageMemory, 0);
 }
 
-void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {/*
+void RTSystem::raytrace(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+	VkCommandBufferBeginInfo beginInfo{};
+	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to begin recording a command buffer in RTSystem.");
+	}
+
+	//TODO: set this up properly (non perspective camera as push const)
+	pushConstHDR.camera = mat44<float>::identity();
+
+	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, graphicsPipelineRT);
+	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineLayoutRT, 0,
+		1, &descriptorSetsHDR[imageIndex], 0, nullptr);
+	vkCmdPushConstants(commandBuffer, pipelineLayoutRT,
+		VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
+		0, sizeof(PushConstantRay), &pushConstHDR);
+	vkCmdTraceRaysKHR(commandBuffer, &rgenRegion, &missRegion, &hitRegion, &callRegion, swapChainExtent.width, swapChainExtent.height, 1);
+
+	if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+		throw std::runtime_error("ERROR: Unable to record command buffer in RTSystem.");
+	}
+
+}
+
+void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
@@ -2256,47 +2283,7 @@ void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t i
 	scissor.extent = swapChainExtent;
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-	//Main subpass
-	{
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-		//Begin recording commands
-		vkCmdPushConstants(commandBuffer, pipelineLayoutHDR, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConst), &pushConstHDR);
-		const VkDeviceSize offsets[] = { 0 };
-		if (useVertexBuffer) vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
-		for (size_t pool = 0; pool < transformPools.size() && pool < indexBuffersValid.size() && useVertexBuffer; pool++) {
-			if (indexBuffersValid[pool]) {
-				vkCmdBindIndexBuffer(commandBuffer, indexBuffers[pool], 0, VK_INDEX_TYPE_UINT32);
-				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-					pipelineLayoutHDR, 0, 1, &descriptorSetsHDR[pool * MAX_FRAMES_IN_FLIGHT + currentFrame], 0, nullptr);
-				vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indexPools[pool].size()), 1, 0, 0, 0);
-			}
-		}
-	}
-
-	//Instanced version
-	if (useInstancing) {
-		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsInstPipeline);
-
-
-		vkCmdPushConstants(commandBuffer, pipelineLayoutHDR, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConst), &pushConstHDR);
-
-		const VkDeviceSize offsets[] = { 0 };
-		vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexInstBuffer, offsets);
-		for (size_t pool = 0; pool < transformInstPools.size(); pool++) {
-			if (transformInstPools[pool].size() == 0) continue;
-			vkCmdBindIndexBuffer(commandBuffer, indexInstBuffers[transformInstIndexPools[pool]], 0, VK_INDEX_TYPE_UINT32);
-			vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-				pipelineLayoutHDR, 0, 1, &descriptorSetsHDR[(pool + transformPools.size()) *
-				MAX_FRAMES_IN_FLIGHT + currentFrame], 0, nullptr);
-			vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(
-				indexInstPools[transformInstIndexPools[pool]].size()),
-				transformInstPools[pool].size(), 0, 0, 0);
-		}
-
-	}
-
 	//Present subpass
-	vkCmdNextSubpass(commandBuffer, VK_SUBPASS_CONTENTS_INLINE);
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipelineFinal);
 	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
@@ -2310,7 +2297,7 @@ void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t i
 		throw std::runtime_error("ERROR: Unable to record command buffer in RTSystem.");
 	}
 
-	*/
+	
 }
 
 
@@ -2396,9 +2383,6 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 
 
 void RTSystem::drawFrame() {
-	/*
-
-
 	VkResult result;
 
 	uint32_t imageIndex;
@@ -2431,64 +2415,27 @@ void RTSystem::drawFrame() {
 	updateUniformBuffers(currentFrame);
 
 
-	for (int i = 0; i < lightPool.size(); i++) {
 
-		size_t commandBufferIndex = (lightPool.size() + 1) * currentFrame + i;
-
-		vkResetCommandBuffer(commandBuffers[commandBufferIndex], 0);
-		recordCommandBufferShadow(commandBuffers[commandBufferIndex], imageIndex, i);
+	vkResetCommandBuffer(commandBuffers[imageIndex], 0);
+	raytrace(commandBuffers[imageIndex], imageIndex);
 
 
-
-		VkSubmitInfo submitInfo{};
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfo.waitSemaphoreCount = 0;
-		submitInfo.signalSemaphoreCount = 0;
-		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = commandBuffers.data() + commandBufferIndex;
-
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
-			throw std::runtime_error("failed to submit draw command buffer!");
-		}
-
-
-	}
-
-
-
-	for (size_t pool = 0; pool < transformPools.size() + transformInstPoolsStore.size(); pool++) {
-		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(lightPool.size());
-		std::vector<VkDescriptorImageInfo> imageInfoShadows = std::vector<VkDescriptorImageInfo>(lightPool.size());
-		size_t poolInd = pool * MAX_FRAMES_IN_FLIGHT + currentFrame;
-
-		for (int light = 0; light < lightPool.size(); light++) {
-			bool useDefault = lightPool[light].shadowRes == 0;
-			writeDescriptorSets[light] = {};
-			imageInfoShadows[light] = {};
-			imageInfoShadows[light].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfoShadows[light].imageView = useDefault ? defaultShadowImageView : shadowDepthImageViews[light];
-			imageInfoShadows[light].sampler = useDefault ? defaultShadowSampler : shadowSamplers[light][currentFrame];
-			writeDescriptorSets[light].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			writeDescriptorSets[light].dstSet = descriptorSetsHDR[poolInd];
-			writeDescriptorSets[light].dstBinding = 8;
-			writeDescriptorSets[light].dstArrayElement = light;
-			writeDescriptorSets[light].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			writeDescriptorSets[light].descriptorCount = 1;
-			writeDescriptorSets[light].pImageInfo = &imageInfoShadows[light];
-		}
-		vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
-
-	}
-
-
-	initialFrame = false;
-	size_t commandBufferIndex = (lightPool.size() + 1) * currentFrame + lightPool.size();
-
-	vkResetCommandBuffer(commandBuffers[commandBufferIndex], 0);
-	recordCommandBufferMain(commandBuffers[commandBufferIndex], imageIndex);
 
 	VkSubmitInfo submitInfo{};
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.waitSemaphoreCount = 0;
+	submitInfo.signalSemaphoreCount = 0;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = commandBuffers.data() + imageIndex;
+
+	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+		throw std::runtime_error("failed to submit draw command buffer!");
+	}
+
+
+	vkResetCommandBuffer(commandBuffers[imageIndex], 0);
+	recordCommandBufferMain(commandBuffers[imageIndex], imageIndex);
+
 	if (renderToWindow) {
 
 		VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
@@ -2502,7 +2449,7 @@ void RTSystem::drawFrame() {
 		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = signalSemaphores;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = commandBuffers.data() + (commandBufferIndex);
+		submitInfo.pCommandBuffers = commandBuffers.data() + (imageIndex);
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
@@ -2531,7 +2478,7 @@ void RTSystem::drawFrame() {
 		submitInfo.waitSemaphoreCount = 0;
 		submitInfo.signalSemaphoreCount = 0;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = commandBuffers.data() + (commandBufferIndex);
+		submitInfo.pCommandBuffers = commandBuffers.data() + (imageIndex);
 
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
@@ -2543,7 +2490,7 @@ void RTSystem::drawFrame() {
 	if (!renderToWindow) {
 		headlessFrames++;
 		std::cout << "Frames rendered: " << headlessFrames << std::endl;
-	}*/
+	}
 }
 
 
