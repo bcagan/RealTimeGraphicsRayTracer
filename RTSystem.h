@@ -156,7 +156,7 @@ private:
 	void createDescriptorPool();
 	void createDescriptorSets();
 	void createCommands();
-	void raytrace(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+	void raytrace(VkCommandBuffer commandBuffer);
 	void recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t imageIndex);
 	void updateUniformBuffers(uint32_t frame);
 	void createImage(uint32_t width, uint32_t height, VkFormat format,
@@ -193,6 +193,7 @@ private:
 	VkPipeline graphicsPipelineRT;
 	VkPipeline graphicsPipelineFinal;
 	//Rendering
+	uint32_t imageCount = 0;
 	VkQueue graphicsQueue;
 	VkQueue presentQueue;
 	VkSwapchainKHR swapChain;

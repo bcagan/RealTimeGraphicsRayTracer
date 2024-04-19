@@ -109,6 +109,9 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 				throw std::runtime_error("ERROR: Unable to create a semaphore or fence in RTSystem.");
 			}
 		}
+		for (int i = 0; i < imageCount; i++) {
+			transitionImageLayout(rtImages[i], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, 1);
+		}
 	}
 
 }
@@ -535,7 +538,7 @@ void RTSystem::createSwapChain() {
 	if (renderToWindow) {
 		VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
 		extent = chooseSwapExtent(swapChainSupport.capabilities, mainWindow->resolution);
-		uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;
+		imageCount = swapChainSupport.capabilities.minImageCount + 1;
 		if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
 			imageCount = swapChainSupport.capabilities.maxImageCount;
 		}
@@ -1696,13 +1699,6 @@ void RTSystem::transitionImageLayout(VkImage image, VkFormat format,
 	barrier.subresourceRange.levelCount = levels;
 	barrier.subresourceRange.layerCount = layers;
 
-	/*
-	
-	transitionImageLayout(rtImages[imageIndex], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, 1);
-	transitionImageLayout(rtImages[imageIndex], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1);
-
-	*/
-
 
 	VkPipelineStageFlags sourceStage;
 	VkPipelineStageFlags destStage;
@@ -1712,6 +1708,20 @@ void RTSystem::transitionImageLayout(VkImage image, VkFormat format,
 		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 		destStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL && newLayout
+		== VK_IMAGE_LAYOUT_GENERAL) {
+		barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+		sourceStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		destStage = VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+	}
+	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout
+		== VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+		barrier.srcAccessMask = 0;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		destStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 	}
 	else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout
 		== VK_IMAGE_LAYOUT_GENERAL) {
@@ -2241,7 +2251,7 @@ void RTSystem::createImage(uint32_t width, uint32_t height, VkFormat format,
 	vkBindImageMemory(device, image, imageMemory, 0);
 }
 
-void RTSystem::raytrace(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
+void RTSystem::raytrace(VkCommandBuffer commandBuffer) {
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 	if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
@@ -2253,7 +2263,7 @@ void RTSystem::raytrace(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
 
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, graphicsPipelineRT);
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineLayoutRT, 0,
-		1, &descriptorSetsHDR[imageIndex], 0, nullptr);
+		1, &descriptorSetsHDR[currentFrame], 0, nullptr);
 	vkCmdPushConstants(commandBuffer, pipelineLayoutRT,
 		VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
 		0, sizeof(PushConstantRay), &pushConstHDR);
@@ -2262,6 +2272,20 @@ void RTSystem::raytrace(VkCommandBuffer commandBuffer, uint32_t imageIndex) {
 	if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
 		throw std::runtime_error("ERROR: Unable to record command buffer in RTSystem.");
 	}
+
+
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.waitSemaphoreCount = 0;
+	submitInfo.signalSemaphoreCount = 0;
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = commandBuffers.data() + currentFrame;
+
+	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+		throw std::runtime_error("failed to submit draw command buffer!");
+	}
+	vkQueueWaitIdle(graphicsQueue);
 
 }
 
@@ -2309,6 +2333,8 @@ void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t i
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipelineFinal);
 	vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 	vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+	const VkDeviceSize offsets[] = { 0 };
+	vkCmdBindVertexBuffers(commandBuffer, 0, 1, &vertexBuffer, offsets);
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayoutFinal, 0, 1, &descriptorSetsFinal[currentFrame], 0, NULL);
 	vkCmdDraw(commandBuffer, 6, 1, 0, 0); //Draw a quad in shader
 
@@ -2437,31 +2463,19 @@ void RTSystem::drawFrame() {
 	updateUniformBuffers(currentFrame);
 
 
-	transitionImageLayout(rtImages[imageIndex], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, 1);
-	vkResetCommandBuffer(commandBuffers[imageIndex], 0);
+	vkResetCommandBuffer(commandBuffers[currentFrame], 0);
 
-	raytrace(commandBuffers[imageIndex], imageIndex);
-
+	raytrace(commandBuffers[currentFrame]);
 
 
-	VkSubmitInfo submitInfo{};
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.waitSemaphoreCount = 0;
-	submitInfo.signalSemaphoreCount = 0;
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = commandBuffers.data() + imageIndex;
-
-	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
-		throw std::runtime_error("failed to submit draw command buffer!");
-	}
-
-
-	transitionImageLayout(rtImages[imageIndex], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1);
-	vkResetCommandBuffer(commandBuffers[imageIndex], 0);
-	recordCommandBufferMain(commandBuffers[imageIndex], imageIndex);
+	vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+	transitionImageLayout(rtImages[currentFrame], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1);
+	recordCommandBufferMain(commandBuffers[currentFrame], imageIndex);
 
 	if (renderToWindow) {
 
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		submitInfo.waitSemaphoreCount = 1;
@@ -2473,7 +2487,7 @@ void RTSystem::drawFrame() {
 		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = signalSemaphores;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = commandBuffers.data() + (imageIndex);
+		submitInfo.pCommandBuffers = commandBuffers.data() + (currentFrame);
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
@@ -2499,10 +2513,12 @@ void RTSystem::drawFrame() {
 		}
 	}
 	else {
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.waitSemaphoreCount = 0;
 		submitInfo.signalSemaphoreCount = 0;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = commandBuffers.data() + (imageIndex);
+		submitInfo.pCommandBuffers = commandBuffers.data() + (currentFrame);
 
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
@@ -2515,6 +2531,7 @@ void RTSystem::drawFrame() {
 		headlessFrames++;
 		std::cout << "Frames rendered: " << headlessFrames << std::endl;
 	}
+	transitionImageLayout(rtImages[currentFrame], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, 1, 1);
 }
 
 
