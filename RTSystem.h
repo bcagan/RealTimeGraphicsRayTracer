@@ -174,6 +174,11 @@ private:
 
 	struct PushConst {
 		mat44<float> camera;
+		int numLights;
+		float camPosX;
+		float camPosY;
+		float camPosZ;
+		float pbrP;
 	};
 	PushConst pushConstHDR;
 

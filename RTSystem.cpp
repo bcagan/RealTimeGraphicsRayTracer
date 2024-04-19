@@ -2259,7 +2259,7 @@ void RTSystem::raytrace(VkCommandBuffer commandBuffer) {
 	}
 
 	//TODO: set this up properly (non perspective camera as push const)
-	pushConstHDR.camera = mat44<float>::identity();
+	
 
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, graphicsPipelineRT);
 	vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, pipelineLayoutRT, 0,
@@ -2351,21 +2351,24 @@ void RTSystem::recordCommandBufferMain(VkCommandBuffer commandBuffer, uint32_t i
 
 
 void RTSystem::updateUniformBuffers(uint32_t frame) {
-
-	//TODO: Do I need to update the image being used in the RT stage? Unsure
-
-	/*
+	
 	//Guided by glm implementation of lookAt
 	float_3 useMoveVec = movementMode == MOVE_DEBUG ? debugMoveVec : moveVec;
 	float_3 useDirVec = movementMode == MOVE_DEBUG ? debugDirVec : dirVec;
 	mat44<float> local = getCameraSpace(cameras[currentCamera], useMoveVec, useDirVec);
+
+	pushConstHDR.camera = local;
+	
 	float_3 cameraPos = useMoveVec + cameras[currentCamera].forAnimate.translate;
-	local = cameras[currentCamera].perspective * local;
+
 	pushConstHDR.numLights = (int)lightPool.size();
 	pushConstHDR.camPosX = cameraPos.x;
 	pushConstHDR.camPosY = cameraPos.y;
 	pushConstHDR.camPosZ = cameraPos.z;
 	pushConstHDR.pbrP = 3;
+	/*
+	
+
 	size_t pool = 0;
 	size_t matsize = sizeof(DrawMaterial);
 	for (; pool < transformPools.size() && useVertexBuffer; pool++) {
