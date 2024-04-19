@@ -538,7 +538,7 @@ DrawList SceneGraph::navigateSceneGraph(bool verbose, int poolSize) {
 	list.meshIndexPools = intermediate.meshIndexPools;
 
 	//For ray tracing support, create mesh specific data pools
-	if (DRAW_MESH) {
+	if (drawType == DRAW_MESH) {
 		list.meshTransformPools = intermediate.transforms;
 		size_t meshNum = list.meshTransformPools.size();
 		list.meshNormalTransformPools = intermediate.normalTransforms;

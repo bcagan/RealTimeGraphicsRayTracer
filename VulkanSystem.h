@@ -15,7 +15,6 @@ class VulkanSystem
 {
 public:
 	VulkanSystem() {};
-
 	MasterWindow* mainWindow;
 	void initVulkan(DrawList drawList, std::string cameraName);
 	void cleanup();

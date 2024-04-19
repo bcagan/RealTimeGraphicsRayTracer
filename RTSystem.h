@@ -10,7 +10,6 @@
 #include "SystemCommonTypes.h"
 
 
-
 class RTSystem
 {
 public:

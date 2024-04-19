@@ -58,6 +58,7 @@ int main(int argc, char* argv[])
 	bool verbose = false;
 	bool culling = false;
 	bool animate = true;
+	bool RT = false;
 	bool listPhysicalDevices = false;
 	if (argc < 2) throw std::runtime_error("Please specify a scene (.s72 file) to load the program using --scene ____.");
 	for (int arg = 0; arg < argc; arg++) {
@@ -94,6 +95,9 @@ int main(int argc, char* argv[])
 		}
 		else if (std::string(argv[arg]).compare("--instancing") == 0) {
 			instancing = true;
+		}
+		else if (std::string(argv[arg]).compare("--RT") == 0) {
+			RT = true;
 		}
 		else if (std::string(argv[arg]).compare("--culling") == 0) {
 			culling = true;
@@ -179,6 +183,8 @@ int main(int argc, char* argv[])
 	graphMode.culling = culling;
 	//Animate: optional
 	graphMode.animate = animate;
+	//RT: optional
+	graphMode.useRT = RT;
 
 	//Create windows and graph modes
 	HRESULT hResult = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);

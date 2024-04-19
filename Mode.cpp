@@ -197,6 +197,58 @@ void Mode::mainLoop(SceneGraph* graph, bool rt) {
 		}
 		else {
 
+
+			if (rtSystem.renderToWindow) {
+				float_3 moveVec = rtSystem.movementMode == MOVE_DEBUG ? rtSystem.debugMoveVec : rtSystem.moveVec;
+				if (rtSystem.movementMode != MOVE_STATIC) {
+					float x = (moveStatus.left * 1 + moveStatus.right * -1) * delta * speed;
+					float z = (moveStatus.forward * 1 + moveStatus.backward * -1) * delta * speed;
+					float y = (moveStatus.up * 1 + moveStatus.down * -1) * delta * speed;
+					moveVec = moveVec + float_3(x, y, z);
+				}
+
+				float_3 dirVec;
+				if (rtSystem.movementMode == MOVE_DEBUG) {
+					float moveFactor = 10;
+					yawDebug += delta * moveStatus.mouseDelta.first * moveFactor;
+					pitchDebug -= delta * moveStatus.mouseDelta.second * moveFactor;
+					if (pitchDebug > 179.9) pitchDebug = 179.9; if (pitchDebug < -179.9) pitchDebug = -179.9;
+					if (yawDebug > 89.9) yawDebug = 89.9; if (yawDebug < -89.9) yawDebug = -89.9;
+					float dirX = cos(radians(yawDebug)) * cos(radians(pitchDebug));
+					float dirY = sin(radians(pitchDebug));
+					float dirZ = sin(radians(yawDebug)) * cos(radians(pitchDebug));
+					dirVec = float_3(dirX, dirY, dirZ);
+					moveStatus.mouseDelta.first = 0;
+					moveStatus.mouseDelta.second = 0;
+				}
+				else {
+					if (rtSystem.movementMode == MOVE_USER) {
+						float moveFactor = 10;
+						yaw += delta * moveStatus.mouseDelta.first * moveFactor;
+						pitch -= delta * moveStatus.mouseDelta.second * moveFactor;
+						if (pitch > 89.9) pitch = 89.9; if (pitch < -89.9) pitch = -89.9;
+						if (yaw > 89.9) yaw = 89.9; if (yaw < -89.9) yaw = -89.9;
+					}
+					float dirX = cos(radians(yaw)) * cos(radians(pitch));
+					float dirY = sin(radians(pitch));
+					float dirZ = sin(radians(yaw)) * cos(radians(pitch));
+					dirVec = float_3(dirX, dirY, dirZ);
+					moveStatus.mouseDelta.first = 0;
+					moveStatus.mouseDelta.second = 0;
+				}
+				if (rtSystem.movementMode == MOVE_DEBUG) {
+					rtSystem.debugDirVec = dirVec;
+					rtSystem.debugMoveVec = moveVec;
+				}
+				else {
+					rtSystem.moveVec = moveVec;
+					rtSystem.dirVec = dirVec;
+				}
+			}
+			else {
+				events.handleEventsQueue(delta);
+			}
+
 			//Update frame
 
 			std::chrono::high_resolution_clock::time_point start =
@@ -216,7 +268,8 @@ void Mode::mainLoop(SceneGraph* graph, bool rt) {
 		}
 	}
 
-	vulkanSystem.idle();
+	if (rt) rtSystem.idle();
+	else vulkanSystem.idle();
 }
 
 int Mode::modeMain() {
@@ -252,11 +305,8 @@ int Mode::modeMain() {
 	Parser parser;
 	SceneGraph graph = parser.parseJson(sceneName, verbose);
 	
-	useRT = true;
 	graph.drawType = useRT ? DRAW_MESH : ( useInstancing ? DRAW_INSTANCED : DRAW_STANDARD);
 	Texture lut = Texture::parseTexture("Textures/LUT.png", false);
-	vulkanSystem.LUT = lut;
-	rtSystem.LUT = lut;
 
 	DrawList drawList = graph.navigateSceneGraph(verbose, poolSize);
 	if (drawList.cubeMaps.size() == 0) {
@@ -267,67 +317,73 @@ int Mode::modeMain() {
 	}
 	
 
-	/*
-	//Initialize Vulkan System
-	vulkanSystem.shaderDir = shaderDir;
-	vulkanSystem.useInstancing = drawList.instancedTransformPools.size() > 0 && useInstancing;
-	vulkanSystem.mainWindow = mainWindow;
-	vulkanSystem.deviceName = deviceName;
-	vulkanSystem.useCulling = culling;
-	vulkanSystem.poolSize = poolSize;
-	vulkanSystem.platform = platform;
-	vulkanSystem.defaultShadowTex = defaultShadow;
+	if (useRT) {
+		//Initialize RTSystem
+		rtSystem.LUT = lut;
+		rtSystem.shaderDir = shaderDir;
+		rtSystem.useInstancing = drawList.instancedTransformPools.size() > 0 && useInstancing;
+		rtSystem.mainWindow = mainWindow;
+		rtSystem.deviceName = deviceName;
+		rtSystem.useCulling = culling;
+		rtSystem.poolSize = poolSize;
+		rtSystem.platform = platform;
+		rtSystem.defaultShadowTex = defaultShadow;
 
-	std::chrono::high_resolution_clock::time_point initFirst = std::chrono::high_resolution_clock::now();
-	vulkanSystem.initVulkan(drawList, cameraName);
-	std::chrono::high_resolution_clock::time_point initLast = std::chrono::high_resolution_clock::now();
-	if (verbose) std::cout << "MEASURE init vulkan: " << (float)
-		std::chrono::duration_cast<std::chrono::milliseconds>(
-			initLast - initFirst).count() << "ms" << std::endl;
-	lastFrame = std::chrono::high_resolution_clock::now();
-	movementMode = MovementMode::MOVE_USER;
-	vulkanSystem.movementMode = movementMode;
-	vulkanSystem.renderToWindow = true;
+		std::chrono::high_resolution_clock::time_point initFirst = std::chrono::high_resolution_clock::now();
+		rtSystem.initVulkan(drawList, cameraName);
+		std::chrono::high_resolution_clock::time_point initLast = std::chrono::high_resolution_clock::now();
+		if (verbose) std::cout << "MEASURE init vulkan: " << (float)
+			std::chrono::duration_cast<std::chrono::milliseconds>(
+				initLast - initFirst).count() << "ms" << std::endl;
+		lastFrame = std::chrono::high_resolution_clock::now();
+		movementMode = MovementMode::MOVE_USER;
+		rtSystem.movementMode = movementMode;
+		rtSystem.renderToWindow = true;
 
-	//Handle headless mode
-	if (!vulkanSystem.renderToWindow) {
-		events = parser.parseEvents(eventName);
-		events.vulkanSystemP = &vulkanSystem;
+		//Begin running main loop
+		mainLoop(&graph, true);
+
+		//Clean up vulkan
+		//rtSystem.cleanup();
 	}
-	
-	//Begin running main loop
-	mainLoop(&graph);
+	else {
+		//Initialize Vulkan System
 
-	//Clean up vulkan
-	//vulkanSystem.cleanup();*/
+		vulkanSystem.LUT = lut;
+		vulkanSystem.shaderDir = shaderDir;
+		vulkanSystem.useInstancing = drawList.instancedTransformPools.size() > 0 && useInstancing;
+		vulkanSystem.mainWindow = mainWindow;
+		vulkanSystem.deviceName = deviceName;
+		vulkanSystem.useCulling = culling;
+		vulkanSystem.poolSize = poolSize;
+		vulkanSystem.platform = platform;
+		vulkanSystem.defaultShadowTex = defaultShadow;
 
+		std::chrono::high_resolution_clock::time_point initFirst = std::chrono::high_resolution_clock::now();
+		vulkanSystem.initVulkan(drawList, cameraName);
+		std::chrono::high_resolution_clock::time_point initLast = std::chrono::high_resolution_clock::now();
+		if (verbose) std::cout << "MEASURE init vulkan: " << (float)
+			std::chrono::duration_cast<std::chrono::milliseconds>(
+				initLast - initFirst).count() << "ms" << std::endl;
+		lastFrame = std::chrono::high_resolution_clock::now();
+		movementMode = MovementMode::MOVE_USER;
+		vulkanSystem.movementMode = movementMode;
+		vulkanSystem.renderToWindow = true;
 
+		//Handle headless mode
+		if (!vulkanSystem.renderToWindow) {
+			events = parser.parseEvents(eventName);
+			events.vulkanSystemP = &vulkanSystem;
+		}
 
-	//Initialize RTSystem
-	rtSystem.shaderDir = shaderDir;
-	rtSystem.useInstancing = drawList.instancedTransformPools.size() > 0 && useInstancing;
-	rtSystem.mainWindow = mainWindow;
-	rtSystem.deviceName = deviceName;
-	rtSystem.useCulling = culling;
-	rtSystem.poolSize = poolSize;
-	rtSystem.platform = platform;
-	rtSystem.defaultShadowTex = defaultShadow;
+		//Begin running main loop
+		mainLoop(&graph);
 
-	std::chrono::high_resolution_clock::time_point initFirst = std::chrono::high_resolution_clock::now();
-	rtSystem.initVulkan(drawList, cameraName);
-	std::chrono::high_resolution_clock::time_point initLast = std::chrono::high_resolution_clock::now();
-	if (verbose) std::cout << "MEASURE init vulkan: " << (float)
-		std::chrono::duration_cast<std::chrono::milliseconds>(
-			initLast - initFirst).count() << "ms" << std::endl;
-	lastFrame = std::chrono::high_resolution_clock::now();
-	movementMode = MovementMode::MOVE_USER;
-	rtSystem.movementMode = movementMode;
-	rtSystem.renderToWindow = true;
+		//Clean up vulkan
+		//vulkanSystem.cleanup();
 
-	//Begin running main loop
-	mainLoop(&graph,true);
+		
+	}
 
-	//Clean up vulkan
-	//rtSystem.cleanup();
 	return 0;
 }
