@@ -173,7 +173,6 @@ private:
 
 
 	struct PushConst {
-		mat44<float> camera;
 		int numLights;
 		float camPosX;
 		float camPosY;
@@ -258,33 +257,10 @@ private:
 	VkSampler LUTSampler;
 	//Uniforms
 
-	std::vector<std::vector<VkBuffer>> uniformBuffersEnvironmentTransformsPools;
-	std::vector<std::vector<VkDeviceMemory>> uniformBuffersMemoryEnvironmentTransformsPools;
-	std::vector<std::vector<void*>> uniformBuffersMappedEnvironmentTransformsPools;
+	std::vector< VkBuffer> uniformBuffersCamera;
+	std::vector< VkDeviceMemory > uniformBuffersMemoryCamera;
+	std::vector< void*> uniformBuffersMappedCamera;
 
-	std::vector<std::vector<VkBuffer>> uniformBuffersNormalTransformsPools;
-	std::vector<std::vector<VkDeviceMemory>> uniformBuffersMemoryNormalTransformsPools;
-	std::vector<std::vector<void*>> uniformBuffersMappedNormalTransformsPools;
-
-	std::vector< std::vector<VkBuffer>> uniformBuffersCamerasPools;
-	std::vector< std::vector<VkDeviceMemory >> uniformBuffersMemoryCamerasPools;
-	std::vector< std::vector<void*>> uniformBuffersMappedCamerasPools;
-
-	std::vector< std::vector<VkBuffer>> uniformBuffersLightsPools;
-	std::vector< std::vector<VkDeviceMemory >> uniformBuffersMemoryLightsPools;
-	std::vector< std::vector<void*>> uniformBuffersMappedLightsPools;
-
-	std::vector< std::vector<VkBuffer>> uniformBuffersLightTransformsPools;
-	std::vector< std::vector<VkDeviceMemory >> uniformBuffersMemoryLightTransformsPools;
-	std::vector< std::vector<void*>> uniformBuffersMappedLightTransformsPools;
-
-	std::vector< std::vector<VkBuffer>> uniformBuffersLightPerspectivePools;
-	std::vector< std::vector<VkDeviceMemory >> uniformBuffersMemoryLightPerspectivePools;
-	std::vector< std::vector<void*>> uniformBuffersMappedLightPerspectivePools;
-
-	std::vector< std::vector<VkBuffer>> uniformBuffersMaterialsPools;
-	std::vector< std::vector<VkDeviceMemory >> uniformBuffersMemoryMaterialsPools;
-	std::vector< std::vector<void*>> uniformBuffersMappedMaterialsPools;
 	VkDescriptorPool descriptorPoolHDR;
 	std::vector<VkDescriptorSet> descriptorSetsHDR;
 	VkDescriptorPool descriptorPoolFinal;

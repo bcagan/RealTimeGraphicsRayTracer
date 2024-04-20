@@ -178,21 +178,9 @@ void RTSystem::cleanup() {
 	vkDestroyImageView(device, LUTImageView, nullptr);
 	vkDestroyImage(device, LUTImage, nullptr);
 	vkFreeMemory(device, LUTImageMemory, nullptr);
-	for (int pool = 0; pool < transformPoolsMesh.size(); pool++) {
-		for (int frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
-			vkDestroyBuffer(device, uniformBuffersEnvironmentTransformsPools[pool][frame], nullptr);
-			vkFreeMemory(device, uniformBuffersMemoryEnvironmentTransformsPools[pool][frame], nullptr);
-			vkDestroyBuffer(device, uniformBuffersNormalTransformsPools[pool][frame], nullptr);
-			vkFreeMemory(device, uniformBuffersMemoryNormalTransformsPools[pool][frame], nullptr);
-			vkDestroyBuffer(device, uniformBuffersMaterialsPools[pool][frame], nullptr);
-			vkFreeMemory(device, uniformBuffersMemoryMaterialsPools[pool][frame], nullptr);
-			vkDestroyBuffer(device, uniformBuffersCamerasPools[pool][frame], nullptr);
-			vkFreeMemory(device, uniformBuffersMemoryCamerasPools[pool][frame], nullptr);
-			vkDestroyBuffer(device, uniformBuffersLightsPools[pool][frame], nullptr);
-			vkFreeMemory(device, uniformBuffersMemoryLightsPools[pool][frame], nullptr);
-			vkDestroyBuffer(device, uniformBuffersLightTransformsPools[pool][frame], nullptr);
-			vkFreeMemory(device, uniformBuffersMemoryLightTransformsPools[pool][frame], nullptr);
-		}
+	for (int frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
+		vkDestroyBuffer(device, uniformBuffersCamera[frame], nullptr);
+		vkFreeMemory(device, uniformBuffersMemoryCamera[frame], nullptr);
 	}
 	vkDestroyDescriptorPool(device, descriptorPoolHDR, nullptr);
 	for (int i = 0; i < 2; i++) {
@@ -1148,12 +1136,18 @@ void RTSystem::createDescriptorSetLayout() {
 	outImageBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 	outImageBinding.pImmutableSamplers = nullptr;
 
+	VkDescriptorSetLayoutBinding cameraBinding{};
+	cameraBinding.binding = 2;
+	cameraBinding.descriptorCount = 1;
+	cameraBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	cameraBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding };
+
+	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding, cameraBinding };
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 2;
+	layoutInfo.bindingCount = 3;
 	layoutInfo.pBindings = bindings;
 	if (vkCreateDescriptorSetLayout(
 		device, &layoutInfo, nullptr, &descriptorSetLayouts[0]) != VK_SUCCESS) {
@@ -2083,14 +2077,26 @@ void RTSystem::createIndexBuffers(bool realloc, bool andFree) {
 }
 
 void RTSystem::createUniformBuffers(bool realloc) {
-}
+	uniformBuffersCamera.resize(MAX_FRAMES_IN_FLIGHT);
+	uniformBuffersMappedCamera.resize(MAX_FRAMES_IN_FLIGHT);
+	uniformBuffersMemoryCamera.resize(MAX_FRAMES_IN_FLIGHT);
 
+	int props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	for (int frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
+		VkDeviceSize bufferSizeCameras = sizeof(mat44<float>);
+		createBuffer(bufferSizeCameras, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
+			uniformBuffersCamera[frame], uniformBuffersMemoryCamera[frame], realloc);
+		vkMapMemory(device, uniformBuffersMemoryCamera[frame], 0, bufferSizeCameras, 0,
+			&uniformBuffersMappedCamera[frame]);
+	}
+}
 
 void RTSystem::createDescriptorPool() {
 
 	VkDescriptorPoolSize poolSizeHDR{};
 	poolSizeHDR.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-	poolSizeHDR.descriptorCount = 2;
+	poolSizeHDR.descriptorCount = MAX_FRAMES_IN_FLIGHT;
 	VkDescriptorPoolCreateInfo poolInfoHDR{};
 	poolInfoHDR.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfoHDR.poolSizeCount = 1;
@@ -2154,8 +2160,12 @@ void RTSystem::createDescriptorSets() {
 		tlasDescriptor.pAccelerationStructures = &tlas.acc;
 		VkDescriptorImageInfo imageDescriptor{ {}, rtImageViews[frame], VK_IMAGE_LAYOUT_GENERAL};
 
+		VkDescriptorBufferInfo bufferInfoCameras{};
+		bufferInfoCameras.buffer = uniformBuffersCamera[frame];
+		bufferInfoCameras.offset = 0;
+		bufferInfoCameras.range = sizeof(mat44<float>);
 
-		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(2);
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(3);
 		writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writeDescriptorSets[0].dstSet = descriptorSetsHDR[frame];
 		writeDescriptorSets[0].pNext = &tlasDescriptor;
@@ -2170,6 +2180,13 @@ void RTSystem::createDescriptorSets() {
 		writeDescriptorSets[1].dstBinding = 1;
 		writeDescriptorSets[1].pImageInfo = &imageDescriptor;
 		writeDescriptorSets[1].dstArrayElement = 0;
+		writeDescriptorSets[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[2].dstSet = descriptorSetsHDR[frame];
+		writeDescriptorSets[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		writeDescriptorSets[2].descriptorCount = 1;
+		writeDescriptorSets[2].dstBinding = 2;
+		writeDescriptorSets[2].pBufferInfo = &bufferInfoCameras;
+		writeDescriptorSets[2].dstArrayElement = 0;
 		
 		vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
 
@@ -2356,80 +2373,17 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 	float_3 useMoveVec = movementMode == MOVE_DEBUG ? debugMoveVec : moveVec;
 	float_3 useDirVec = movementMode == MOVE_DEBUG ? debugDirVec : dirVec;
 	mat44<float> local = getCameraSpace(cameras[currentCamera], useMoveVec, useDirVec);
-
-	pushConstHDR.camera = local;
-	
 	float_3 cameraPos = useMoveVec + cameras[currentCamera].forAnimate.translate;
-
 	pushConstHDR.numLights = (int)lightPool.size();
 	pushConstHDR.camPosX = cameraPos.x;
 	pushConstHDR.camPosY = cameraPos.y;
 	pushConstHDR.camPosZ = cameraPos.z;
 	pushConstHDR.pbrP = 3;
-	/*
-	
-
-	size_t pool = 0;
-	size_t matsize = sizeof(DrawMaterial);
-	for (; pool < transformPools.size() && useVertexBuffer; pool++) {
-		memcpy(uniformBuffersMappedTransformsPools[pool][frame],
-			transformPools[pool].data(), sizeof(mat44<float>) *
-			transformPools[pool].size());
-		for (int i = 0; i < lightPool.size(); i++) {
-			memcpy(uniformBuffersMappedModelsPools[i][pool][frame],
-				transformPools[pool].data(), sizeof(mat44<float>) *
-				transformPools[pool].size());
-		}
-		if (rawEnvironment.has_value()) {
-			memcpy(uniformBuffersMappedNormalTransformsPools[pool][frame],
-				transformNormalPools[pool].data(), sizeof(mat44<float>) *
-				transformNormalPools[pool].size());
-			memcpy(uniformBuffersMappedEnvironmentTransformsPools[pool][frame],
-				transformEnvironmentPools[pool].data(), sizeof(mat44<float>) *
-				transformEnvironmentPools[pool].size());
-		}
-		memcpy(uniformBuffersMappedCamerasPools[pool][frame], &(local),
-			sizeof(mat44<float>));
-		memcpy(uniformBuffersMappedLightsPools[pool][frame], lightPool.data(),
-			sizeof(DrawLight) * lightPool.size());
-		memcpy(uniformBuffersMappedLightTransformsPools[pool][frame], worldTolightPool.data(),
-			sizeof(mat44<float>) * worldTolightPool.size());
-		memcpy(uniformBuffersMappedLightPerspectivePools[pool][frame], worldTolightPerspPool.data(),
-			sizeof(mat44<float>) * worldTolightPool.size());
-		memcpy(uniformBuffersMappedMaterialsPools[pool][frame],
-			materialPools[pool].data(), matsize * materialPools[pool].size());
+	for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
+		memcpy(uniformBuffersMappedCamera[frame], &(local),
+			sizeof(mat44<float>));	
 	}
-	if (!useInstancing) return;
-	for (; pool < transformPools.size() + transformInstPools.size(); pool++) {
-		size_t poolAdjusted = pool - transformPools.size();
-		if (transformInstPools[poolAdjusted].size() == 0) continue;
-		memcpy(uniformBuffersMappedTransformsPools[pool][frame],
-			transformInstPools[poolAdjusted].data(), sizeof(mat44<float>) *
-			transformInstPools[poolAdjusted].size());
-		for (int i = 0; i < lightPool.size(); i++) {
-			memcpy(uniformBuffersMappedModelsPools[i][pool][frame],
-				transformInstPools[poolAdjusted].data(), sizeof(mat44<float>) *
-				transformInstPools[poolAdjusted].size());
-		}
-		if (rawEnvironment.has_value()) {
-			memcpy(uniformBuffersMappedNormalTransformsPools[pool][frame],
-				transformNormalInstPools[poolAdjusted].data(), sizeof(mat44<float>) *
-				transformNormalInstPools[poolAdjusted].size());
-			memcpy(uniformBuffersMappedEnvironmentTransformsPools[pool][frame],
-				transformEnvironmentInstPools[poolAdjusted].data(), sizeof(mat44<float>) *
-				transformEnvironmentInstPools[poolAdjusted].size());
-		}
-		memcpy(uniformBuffersMappedCamerasPools[pool][frame], &(local),
-			sizeof(mat44<float>));
-		memcpy(uniformBuffersMappedLightsPools[pool][frame], lightPool.data(),
-			sizeof(DrawLight) * lightPool.size());
-		memcpy(uniformBuffersMappedLightTransformsPools[pool][frame], worldTolightPool.data(),
-			sizeof(mat44<float>) * worldTolightPool.size());
-		memcpy(uniformBuffersMappedLightPerspectivePools[pool][frame], worldTolightPerspPool.data(),
-			sizeof(mat44<float>) * worldTolightPool.size());
-		memcpy(uniformBuffersMappedMaterialsPools[pool][frame],
-			&instancedMaterials[poolAdjusted], matsize);
-	}*/
+	
 }
 
 
