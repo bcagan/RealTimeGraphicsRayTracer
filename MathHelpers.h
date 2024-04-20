@@ -6,6 +6,7 @@
 #include "iostream"
 #include "exception"
 #include "vulkan/vulkan.h"
+#include "glm/mat4x4.hpp" //Unable to invert perspective otherwise
 
 #define uint64_2 vec2<uint64_t>
 #define uint64_3 vec3<uint64_t>
@@ -1124,6 +1125,30 @@ template<typename T> struct mat44 {
 			0, 0, -(f + n) / (f - n), -1,
 			0, 0, -f * n / (f - n), 0
 		);
+	}
+
+
+	static mat44<T> invPerspective(T fovy, T aspect, T nearP, T farP) {
+		T n = nearP; T f = farP;
+		T t = tan(fovy / 2.0) * n;
+		T b = -t;
+		T r = t * aspect;
+		T l = -r;
+
+		glm::mat4x4 persp(
+			2 * n / (r - l), 0, 0, 0,
+			0, 2 * n / (t - b), 0, 0,
+			0, 0, -(f + n) / (f - n), -1,
+			0, 0, -f * n / (f - n), 0
+		);
+		persp = glm::inverse(persp);
+		mat44<float> retMat;
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; j++) {
+				retMat.data[i][j] = persp[i][j];
+			}
+		}
+		return retMat;
 	}
 
 	//ROW MAJOR

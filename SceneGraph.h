@@ -286,7 +286,9 @@ struct DrawNode {
 struct DrawCamera {
 	std::string name;
 	mat44<float> transform;
+	mat44<float> invTransform;
 	mat44<float> perspective;
+	mat44<float> invPerspective;
 	Perspective perspectiveInfo;
 	//For animation
 	ForAnimate forAnimate;

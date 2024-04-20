@@ -141,6 +141,7 @@ private:
 	void createVertexBuffer(bool realloc = true);
 	void createTransformBuffers(bool realloc = true);
 	mat44<float> getCameraSpace(DrawCamera camera, float_3 useMoveVec, float_3 useDirVec);
+	mat44<float> getInvCameraSpace(DrawCamera camera, float_3 useMoveVec, float_3 useDirVec);
 	void transitionImageLayout(VkImage image, VkFormat format,
 		VkImageLayout oldLayout, VkImageLayout newLayout, int layers = 1, int levels = 1);
 	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height, int level = 0, int face = 0);
@@ -260,6 +261,9 @@ private:
 	std::vector< VkBuffer> uniformBuffersCamera;
 	std::vector< VkDeviceMemory > uniformBuffersMemoryCamera;
 	std::vector< void*> uniformBuffersMappedCamera;
+	std::vector< VkBuffer> uniformBuffersProj;
+	std::vector< VkDeviceMemory > uniformBuffersMemoryProj;
+	std::vector< void*> uniformBuffersMappedProj;
 
 	VkDescriptorPool descriptorPoolHDR;
 	std::vector<VkDescriptorSet> descriptorSetsHDR;

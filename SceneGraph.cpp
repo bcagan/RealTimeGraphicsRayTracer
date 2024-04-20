@@ -154,9 +154,12 @@ void SceneGraph::recurseSceneGraph(
 		drawCamera.name = graphCamera.name;
 		Perspective persp = graphCamera.perspective;
 		mat44<float> perspMat = mat44<float>::perspective(persp.vfov, persp.aspect, persp.nearP, persp.farP);
+		mat44<float> invPerspMat = mat44<float>::invPerspective(persp.vfov, persp.aspect, persp.nearP, persp.farP);
 		drawCamera.perspective = perspMat;
+		drawCamera.invPerspective = invPerspMat;
 		drawCamera.perspectiveInfo = persp;
 		drawCamera.transform = worldToLocal;
+		drawCamera.invTransform = localToWorld;
 
 		//For animation
 		drawCamera.forAnimate.parent = fromWorld;

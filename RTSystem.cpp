@@ -23,6 +23,7 @@
 #include "stb_image.h"
 #include "SystemCommon.h"
 #include "SystemCommonTypes.h"
+#include <glm/mat4x4.hpp> //TODO: TEMP
 //https://vulkan-tutorial.com
 //https://nvpro-samples.github.io/vk_raytracing_tutorial_KHR/#raytracingsetup
 
@@ -824,7 +825,7 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 			&offsets[mesh].primitiveCount, &buildData[mesh].sizeInfo);
 
 		accStructTotalSize += buildData[mesh].sizeInfo.accelerationStructureSize;
-		maxScratchSize = max(maxScratchSize,
+		maxScratchSize = std::max(maxScratchSize,
 			buildData[mesh].sizeInfo.buildScratchSize);
 		blasToCompact += (buildData[mesh].buildInfo.flags &
 			VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR) != 0 ? 1 : 0;
@@ -1142,12 +1143,18 @@ void RTSystem::createDescriptorSetLayout() {
 	cameraBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	cameraBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
+	VkDescriptorSetLayoutBinding persBinding{};
+	persBinding.binding = 3;
+	persBinding.descriptorCount = 1;
+	persBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	persBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
-	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding, cameraBinding };
+
+	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding, cameraBinding, persBinding };
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 3;
+	layoutInfo.bindingCount = 4;
 	layoutInfo.pBindings = bindings;
 	if (vkCreateDescriptorSetLayout(
 		device, &layoutInfo, nullptr, &descriptorSetLayouts[0]) != VK_SUCCESS) {
@@ -1675,6 +1682,25 @@ mat44<float> RTSystem::getCameraSpace(DrawCamera camera, float_3 useMoveVec, flo
 	return local;
 }
 
+mat44<float> RTSystem::getInvCameraSpace(DrawCamera camera, float_3 useMoveVec, float_3 useDirVec) {
+	useDirVec = useDirVec.normalize();
+	float_3 up = float_3(0, 0, 1);
+	float_3 cameraRight = up.cross(useDirVec);
+	float_3 cameraUp = useDirVec.cross(cameraRight);
+	cameraRight = cameraRight.normalize(); cameraUp = cameraUp.normalize();
+	vec4 transposed0 = float_4(cameraRight[0], cameraUp[0], useDirVec[0], 0).normalize();
+	vec4 transposed1 = float_4(cameraRight[1], cameraUp[1], useDirVec[1], 0).normalize();
+	vec4 transposed2 = float_4(cameraRight[2], cameraUp[2], useDirVec[2], 0).normalize();
+	mat44 localRot = mat44<float>(transposed0, transposed1, transposed2, float_4(0, 0, 0, 1));
+	float_3 moveLocal = float_3(-useMoveVec.x, -useMoveVec.y, -useMoveVec.z);
+	mat44 local = mat44<float>(localRot);
+	local.data[3][0] = moveLocal.x;
+	local.data[3][1] = moveLocal.y;
+	local.data[3][2] = moveLocal.z;
+	local = camera.invTransform * local;
+	return local;
+}
+
 
 void RTSystem::transitionImageLayout(VkImage image, VkFormat format,
 	VkImageLayout oldLayout, VkImageLayout newLayout, int layers, int levels) {
@@ -2080,6 +2106,9 @@ void RTSystem::createUniformBuffers(bool realloc) {
 	uniformBuffersCamera.resize(MAX_FRAMES_IN_FLIGHT);
 	uniformBuffersMappedCamera.resize(MAX_FRAMES_IN_FLIGHT);
 	uniformBuffersMemoryCamera.resize(MAX_FRAMES_IN_FLIGHT);
+	uniformBuffersProj.resize(MAX_FRAMES_IN_FLIGHT);
+	uniformBuffersMappedProj.resize(MAX_FRAMES_IN_FLIGHT);
+	uniformBuffersMemoryProj.resize(MAX_FRAMES_IN_FLIGHT);
 
 	int props = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
 		VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -2089,6 +2118,10 @@ void RTSystem::createUniformBuffers(bool realloc) {
 			uniformBuffersCamera[frame], uniformBuffersMemoryCamera[frame], realloc);
 		vkMapMemory(device, uniformBuffersMemoryCamera[frame], 0, bufferSizeCameras, 0,
 			&uniformBuffersMappedCamera[frame]);
+		createBuffer(bufferSizeCameras, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, props,
+			uniformBuffersProj[frame], uniformBuffersMemoryProj[frame], realloc);
+		vkMapMemory(device, uniformBuffersMemoryProj[frame], 0, bufferSizeCameras, 0,
+			&uniformBuffersMappedProj[frame]);
 	}
 }
 
@@ -2165,7 +2198,12 @@ void RTSystem::createDescriptorSets() {
 		bufferInfoCameras.offset = 0;
 		bufferInfoCameras.range = sizeof(mat44<float>);
 
-		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(3);
+		VkDescriptorBufferInfo bufferInfoPers{};
+		bufferInfoPers.buffer = uniformBuffersProj[frame];
+		bufferInfoPers.offset = 0;
+		bufferInfoPers.range = sizeof(mat44<float>);
+
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(4);
 		writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writeDescriptorSets[0].dstSet = descriptorSetsHDR[frame];
 		writeDescriptorSets[0].pNext = &tlasDescriptor;
@@ -2187,6 +2225,13 @@ void RTSystem::createDescriptorSets() {
 		writeDescriptorSets[2].dstBinding = 2;
 		writeDescriptorSets[2].pBufferInfo = &bufferInfoCameras;
 		writeDescriptorSets[2].dstArrayElement = 0;
+		writeDescriptorSets[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[3].dstSet = descriptorSetsHDR[frame];
+		writeDescriptorSets[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		writeDescriptorSets[3].descriptorCount = 1;
+		writeDescriptorSets[3].dstBinding = 3;
+		writeDescriptorSets[3].pBufferInfo = &bufferInfoPers;
+		writeDescriptorSets[3].dstArrayElement = 0;
 		
 		vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
 
@@ -2275,7 +2320,6 @@ void RTSystem::raytrace(VkCommandBuffer commandBuffer) {
 		throw std::runtime_error("ERROR: Unable to begin recording a command buffer in RTSystem.");
 	}
 
-	//TODO: set this up properly (non perspective camera as push const)
 	
 
 	vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, graphicsPipelineRT);
@@ -2372,7 +2416,22 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 	//Guided by glm implementation of lookAt
 	float_3 useMoveVec = movementMode == MOVE_DEBUG ? debugMoveVec : moveVec;
 	float_3 useDirVec = movementMode == MOVE_DEBUG ? debugDirVec : dirVec;
-	mat44<float> local = getCameraSpace(cameras[currentCamera], useMoveVec, useDirVec);
+	mat44<float> normLocal = getCameraSpace(cameras[currentCamera], useMoveVec, useDirVec);
+	glm::mat4x4 glmLocal;
+	for (int i = 0; i < 4; i++) {
+		for (int j = 0; j < 4; j++) {
+			glmLocal[i][j] = normLocal.data[i][j];
+		}
+	}
+	glmLocal = glm::inverse(glmLocal);
+	mat44<float> local;
+	for (int i = 0; i < 4; i++) {
+		for (int j = 0; j < 4; j++) {
+			local.data[i][j] = glmLocal[i][j];
+		}
+	}
+
+
 	float_3 cameraPos = useMoveVec + cameras[currentCamera].forAnimate.translate;
 	pushConstHDR.numLights = (int)lightPool.size();
 	pushConstHDR.camPosX = cameraPos.x;
@@ -2380,8 +2439,11 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 	pushConstHDR.camPosZ = cameraPos.z;
 	pushConstHDR.pbrP = 3;
 	for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
+		mat44<float> test = local*normLocal;
 		memcpy(uniformBuffersMappedCamera[frame], &(local),
-			sizeof(mat44<float>));	
+			sizeof(mat44<float>));
+		memcpy(uniformBuffersMappedProj[frame], &(cameras[currentCamera].invPerspective),
+			sizeof(mat44<float>));
 	}
 	
 }
