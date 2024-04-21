@@ -222,6 +222,9 @@ private:
 	std::vector<VkDeviceMemory> meshIndexBufferMemorys;
 	std::vector<VkBuffer> meshTransformBuffers;
 	std::vector<VkDeviceMemory> meshTransformMemorys;
+	std::vector<uint64_t> meshIndexBufferAddresses;
+	VkBuffer indexAddressBuffer;
+	VkDeviceMemory IndexAddressBufferMemorys;
 
 	//Acceleration Structures
 	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR;

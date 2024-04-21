@@ -776,18 +776,18 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 	std::vector<BuildData> buildData = std::vector<BuildData>(numMeshes);
 
 	//Create in terms of meshes
-	for(int mesh = 0; mesh < (size_t)numMeshes; mesh++){
+	for (int mesh = 0; mesh < (size_t)numMeshes; mesh++) {
 		//Produce geometry
 		VkDeviceAddress vertexAddress = getBufferAddress(device, vertexBuffer);
 		VkDeviceAddress indexAddress = getBufferAddress(device, meshIndexBuffers[mesh]);
 		VkDeviceAddress transformAddress = getBufferAddress(device, meshTransformBuffers[mesh]);
-	
-		uint32_t maxTriCount = indexPoolsMesh[mesh].size()/3;
-		
-		
-		
+		meshIndexBufferAddresses.push_back(indexAddress);
+		uint32_t maxTriCount = indexPoolsMesh[mesh].size() / 3;
+
+
+
 		VkAccelerationStructureGeometryTrianglesDataKHR triangles
-			{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR };
+		{ VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR };
 		triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
 		triangles.vertexData.deviceAddress = vertexAddress;
 		triangles.vertexStride = sizeof(Vertex);
@@ -803,7 +803,7 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 		geometries[mesh].flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
 		geometries[mesh].geometry.triangles = triangles;
 
-		
+
 		offsets[mesh].firstVertex = 0;
 		offsets[mesh].primitiveCount = maxTriCount;
 		offsets[mesh].primitiveOffset = 0;
@@ -830,6 +830,27 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 		blasToCompact += (buildData[mesh].buildInfo.flags &
 			VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR) != 0 ? 1 : 0;
 	}
+
+	//Create Index Address Buffer
+	size_t indexAddressSize = meshIndexBufferAddresses.size() * sizeof(uint64_t);
+	int usageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	int propertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	VkBuffer stagingBuffer{};
+	VkDeviceMemory stagingBufferMemory{};
+	createBuffer(indexAddressSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, propertyBits,
+		stagingBuffer, stagingBufferMemory, true);
+	void* data;
+	vkMapMemory(device, stagingBufferMemory, 0, indexAddressSize, 0, &data);
+	memcpy(data, meshIndexBufferAddresses.data(), (size_t)indexAddressSize);
+	vkUnmapMemory(device, stagingBufferMemory);
+	createBuffer(indexAddressSize, usageBits, propertyBits,
+		indexAddressBuffer, IndexAddressBufferMemorys, realloc);
+	copyBuffer(stagingBuffer, indexAddressBuffer, indexAddressSize);
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+	vkFreeMemory(device, stagingBufferMemory, nullptr);
+
 	
 	//Build
 	VkBuffer scratchBuffer; 
@@ -1149,12 +1170,24 @@ void RTSystem::createDescriptorSetLayout() {
 	persBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 	persBinding.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
 
+	VkDescriptorSetLayoutBinding verticesBit{};
+	verticesBit.binding = 4;
+	verticesBit.descriptorCount = 1;
+	verticesBit.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	verticesBit.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
-	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding, cameraBinding, persBinding };
+	VkDescriptorSetLayoutBinding indicesBit{};
+	indicesBit.binding = 5;
+	indicesBit.descriptorCount = 1;
+	indicesBit.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	indicesBit.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+
+	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding, cameraBinding, persBinding, verticesBit, indicesBit };
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 4;
+	layoutInfo.bindingCount = 6;
 	layoutInfo.pBindings = bindings;
 	if (vkCreateDescriptorSetLayout(
 		device, &layoutInfo, nullptr, &descriptorSetLayouts[0]) != VK_SUCCESS) {
@@ -1602,7 +1635,8 @@ void RTSystem::createVertexBuffer(bool realloc) {
 	useVertexBuffer = false;
 	int stagingBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	int vertexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT 
-		| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+		| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 	int vertexPropertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 	if (vertices.size() != 0) {
 		useVertexBuffer = true;
@@ -2089,8 +2123,8 @@ void RTSystem::createIndexBuffers(bool realloc, bool andFree) {
 
 			//Create proper index buffer
 			int indexUsageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT
-				 | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | 
-				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+				| VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+				VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 			int indexPropertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 			createBuffer(bufferSize, indexUsageBits, indexPropertyBits,
 				meshIndexBuffers[pool], meshIndexBufferMemorys[pool], realloc);
@@ -2203,7 +2237,17 @@ void RTSystem::createDescriptorSets() {
 		bufferInfoPers.offset = 0;
 		bufferInfoPers.range = sizeof(mat44<float>);
 
-		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(4);
+		VkDescriptorBufferInfo bufferInfoVertices{};
+		bufferInfoVertices.buffer = vertexBuffer;
+		bufferInfoVertices.offset = 0;
+		bufferInfoVertices.range = sizeof(Vertex)*vertices.size();
+
+		VkDescriptorBufferInfo bufferInfoIndices{};
+		bufferInfoIndices.buffer = indexAddressBuffer;
+		bufferInfoIndices.offset = 0;
+		bufferInfoIndices.range = sizeof(uint64_t) * meshIndexBufferAddresses.size();;
+
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(6);
 		writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writeDescriptorSets[0].dstSet = descriptorSetsHDR[frame];
 		writeDescriptorSets[0].pNext = &tlasDescriptor;
@@ -2232,6 +2276,20 @@ void RTSystem::createDescriptorSets() {
 		writeDescriptorSets[3].dstBinding = 3;
 		writeDescriptorSets[3].pBufferInfo = &bufferInfoPers;
 		writeDescriptorSets[3].dstArrayElement = 0;
+		writeDescriptorSets[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[4].dstSet = descriptorSetsHDR[frame];
+		writeDescriptorSets[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		writeDescriptorSets[4].descriptorCount = 1;
+		writeDescriptorSets[4].dstBinding = 4;
+		writeDescriptorSets[4].pBufferInfo = &bufferInfoVertices;
+		writeDescriptorSets[4].dstArrayElement = 0;
+		writeDescriptorSets[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[5].dstSet = descriptorSetsHDR[frame];
+		writeDescriptorSets[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		writeDescriptorSets[5].descriptorCount = 1;
+		writeDescriptorSets[5].dstBinding = 5;
+		writeDescriptorSets[5].pBufferInfo = &bufferInfoIndices;
+		writeDescriptorSets[5].dstArrayElement = 0;
 		
 		vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
 
@@ -2477,8 +2535,6 @@ void RTSystem::drawFrame() {
 
 
 
-	createVertexBuffer(false);
-	createIndexBuffers(true, true);
 	updateUniformBuffers(currentFrame);
 
 
