@@ -294,8 +294,10 @@ private:
 	// Push constant structure for the ray tracer
 	struct PushConstantRay
 	{
-		float_4  clearColor;
+		int frame;
 	};
+	int frame = 0;
+	PushConstantRay pushConstantRT;
 
 	const std::vector<const char*> validationLayers = {
 		"VK_LAYER_KHRONOS_validation"

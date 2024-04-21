@@ -14,7 +14,6 @@ struct HitPayload
   vec3 hitValue;
 };
 
-
 struct Vertex{
 	float inPositionX;
 	float inPositionY;

@@ -2387,7 +2387,7 @@ void RTSystem::raytrace(VkCommandBuffer commandBuffer) {
 		1, &descriptorSetsHDR[currentFrame], 0, nullptr);
 	vkCmdPushConstants(commandBuffer, pipelineLayoutRT,
 		VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR,
-		0, sizeof(PushConstantRay), &pushConstHDR);
+		0, sizeof(PushConstantRay), &pushConstantRT);
 	vkCmdTraceRaysKHR(commandBuffer, &rgenRegion, &missRegion, &hitRegion, &callRegion, swapChainExtent.width, swapChainExtent.height, 1);
 
 	if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -2498,6 +2498,9 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 	pushConstHDR.camPosY = cameraPos.y;
 	pushConstHDR.camPosZ = cameraPos.z;
 	pushConstHDR.pbrP = 3;
+	pushConstantRT.frame = frame;
+	frame++;
+	
 	for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
 		mat44<float> test = local*normLocal;
 		memcpy(uniformBuffersMappedCamera[frame], &(local),
