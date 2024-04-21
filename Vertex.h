@@ -4,18 +4,12 @@
 #include<vulkan/vulkan.h>
 
 
-static VkFormat posFormat = VK_FORMAT_R32G32B32_SFLOAT;
-static VkFormat normalFormat = VK_FORMAT_R32G32B32_SFLOAT;
-static VkFormat tangentFormat = VK_FORMAT_R32G32B32_SFLOAT;
-static VkFormat texcoordFormat = VK_FORMAT_R32G32_SFLOAT;
-static VkFormat colFormat = VK_FORMAT_R32G32B32_SFLOAT;
-
 
 //TODO: Split into simple (pos,normal,color,node) and standard (pos, normal,tangent,texcoord,color,node) in the future
 struct Vertex {
 	float_3 pos;
 	float_3 normal;
-	float_4 tangent;
+	float_3 tangent;
 	float_2 texcoord;
 	float_3 color;
 	int node;
@@ -40,7 +34,7 @@ struct Vertex {
 		attributeDescriptions[1].offset = offsetof(Vertex, normal);
 		attributeDescriptions[2].binding = 0;
 		attributeDescriptions[2].location = 2;
-		attributeDescriptions[2].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+		attributeDescriptions[2].format = VK_FORMAT_R32G32B32_SFLOAT;
 		attributeDescriptions[2].offset = offsetof(Vertex, tangent);
 		attributeDescriptions[3].binding = 0;
 		attributeDescriptions[3].location = 3;

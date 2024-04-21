@@ -16,11 +16,20 @@ struct HitPayload
 
 
 struct Vertex{
-	vec3 inPosition;
-	vec3 inNormal;
-	vec3 inTanget;
-	vec2 inTexcoord;
-	vec3 inColor;
+	float inPositionX;
+	float inPositionY;
+	float inPositionZ;
+	float inNormalX;
+	float inNormalY;
+	float inNormalZ;
+	float inTangetX;
+	float inTangetY;
+	float inTangetZ;
+	float inTexcoordU;
+	float inTexcoordV;
+	float inColorX;
+	float inColorY;
+	float inColorZ;
 	int inNode;
 };
 layout(location = 0) rayPayloadInEXT HitPayload hitPayload;
@@ -44,6 +53,9 @@ void main()
 	const float b0 = 1.0 - attribs.x - attribs.y;
 	const float b1 = attribs.x;
 	const float b2 = attribs.y;
-	color = b0*v0.inColor + b1*v1.inColor * b2*v2.inColor;
+	vec3 color0 = vec3(v0.inColorX,v0.inColorY,v0.inColorZ);
+	vec3 color1 = vec3(v1.inColorX,v1.inColorY,v1.inColorZ);
+	vec3 color2 = vec3(v2.inColorX,v2.inColorY,v2.inColorZ);
+	color = b0*color0 + b1*color1 + b2*color2;
 	hitPayload.hitValue = color;
 }

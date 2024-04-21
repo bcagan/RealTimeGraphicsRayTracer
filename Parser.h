@@ -524,7 +524,7 @@ std::vector<SceneVertex> Parser::parseAttributes(std::vector<std::string> attrib
 			normalString = attributeString;
 		}
 		else if (attributeString.substr(1, 2) == "TA") {
-			stride += 16;
+			stride += 12;
 			tangentString = attributeString;
 		}
 		else if (attributeString.substr(1, 2) == "TE") {
@@ -566,7 +566,7 @@ std::vector<SceneVertex> Parser::parseAttributes(std::vector<std::string> attrib
 			vertices[vert].normal = (float_3)normals[vert];
 		}
 		if (tangentString.has_value()) {
-			vertices[vert].tangent = tangents[vert];
+			vertices[vert].tangent = (float_3)tangents[vert];
 		}
 		if (texcoordsString.has_value()) {
 			vertices[vert].texcoord = (float_2)texcoords[vert];

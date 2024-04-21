@@ -2237,10 +2237,12 @@ void RTSystem::createDescriptorSets() {
 		bufferInfoPers.offset = 0;
 		bufferInfoPers.range = sizeof(mat44<float>);
 
+		size_t VertSize = sizeof(Vertex);
 		VkDescriptorBufferInfo bufferInfoVertices{};
 		bufferInfoVertices.buffer = vertexBuffer;
 		bufferInfoVertices.offset = 0;
-		bufferInfoVertices.range = sizeof(Vertex)*vertices.size();
+		bufferInfoVertices.range =VertSize*vertices.size();
+
 
 		VkDescriptorBufferInfo bufferInfoIndices{};
 		bufferInfoIndices.buffer = indexAddressBuffer;
