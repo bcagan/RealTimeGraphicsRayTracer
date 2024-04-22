@@ -104,7 +104,7 @@ void main()
 	Material material = materials.arr[v0.inNode];
 	hitPayload.hitValue = color;
 	if(material.type == 3){ //Reflective
-		hitPayload.reflectFactor = 0.5;
+		hitPayload.reflectFactor = 1;
 	}
 	else if(material.type == 2) { //Lambertian
 	
@@ -115,7 +115,7 @@ void main()
 		else{
 			albedo = texture(textures[material.albedoTexture], texcoord).rgb;
 		}
-		hitPayload.hitValue = albedo * color;
+		hitPayload.hitValue = albedo * color * vec3(1,0.9,0.8)*0.75;
 	    hitPayload.reflectFactor = 0;
 	}
 	else{
