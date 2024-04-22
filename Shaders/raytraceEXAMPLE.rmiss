@@ -6,6 +6,9 @@
 struct HitPayload
 {
   vec3 hitValue;
+  float reflectFactor;
+  vec3 normal;
+  vec3 hitPoint;
 };
 
 layout(location = 0) rayPayloadInEXT HitPayload hitPayload;
@@ -13,4 +16,5 @@ layout(location = 0) rayPayloadInEXT HitPayload hitPayload;
 void main()
 {
     hitPayload.hitValue = vec3(0.0, 0.0, 0.0);
+    hitPayload.reflectFactor = 0;
 }
