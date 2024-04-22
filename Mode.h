@@ -37,6 +37,7 @@ public:
 	int poolSize = MAX_POOL;
 	bool animate = true;
 	int numSamples = 1;
+	int doReflect = 0;
 	std::string sceneName;
 	std::string cameraName;
 	std::string deviceName;

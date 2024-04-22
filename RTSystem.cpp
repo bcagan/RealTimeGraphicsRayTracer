@@ -2499,6 +2499,7 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 	pushConstHDR.camPosZ = cameraPos.z;
 	pushConstHDR.pbrP = 3;
 	pushConstantRT.frame = frame;
+	pushConstantRT.doReflect = doReflect;
 	pushConstantRT.numSamples = numSamples;
 	frame++;
 	

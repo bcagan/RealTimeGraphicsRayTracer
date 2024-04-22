@@ -74,6 +74,7 @@ public:
 	std::vector<DrawCamera> cameras;
 	//RT
 	int numSamples;
+	int doReflect = 0;
 private:
 	//init
 	void createInstance(bool verbose = true);
@@ -297,6 +298,7 @@ private:
 	struct PushConstantRay
 	{
 		int frame;
+		int doReflect;
 		int numSamples;
 	};
 	int frame = 0;

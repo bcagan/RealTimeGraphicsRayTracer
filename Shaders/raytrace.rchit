@@ -19,6 +19,7 @@ struct HitPayload
 
 layout(push_constant) uniform PushConstant { 
 	int frame;
+    int doReflect;
 	int numSamples;	
 };
 
