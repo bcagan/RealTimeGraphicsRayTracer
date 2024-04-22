@@ -12,7 +12,12 @@ struct HitPayload
 layout(location = 0) rayPayloadEXT HitPayload hitPayload;
 
 
-layout(push_constant) uniform PushConstant { int frame; };
+
+layout(push_constant) uniform PushConstant { 
+	int frame;
+	int numSamples;	
+};
+
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 layout(binding = 1, set = 0, rgba32f) uniform image2D image;
 layout(binding = 2, set = 0) uniform Camera{
@@ -25,19 +30,22 @@ layout(binding = 3, set = 0) uniform Proj{
 void main() 
 {
     //https://github.com/nvpro-samples/vk_raytracing_tutorial_KHR/tree/master/ray_tracing_jitter_cam
-    uint seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, frame);
-    vec2 jitter = vec2(rnd(seed), rnd(seed));
-    const vec2 uv = (vec2(gl_LaunchIDEXT.xy) + jitter) / gl_LaunchSizeEXT.xy;
-    vec2 uvDir = uv*2.0 - 1.0;
-    vec4 cameraOrigin = camera.mat*vec4(0,0,0,1);
-    vec4 lensInter = proj.mat*vec4(uvDir.x,uvDir.y,1,1);
-    vec4 rayDir = camera.mat*vec4(normalize(lensInter.xyz),0);
-
     uint rayFlags = gl_RayFlagsOpaqueEXT;
     float tmin = 0.001;
     float tmax = 1000000.0;
-    traceRayEXT(topLevelAS, rayFlags, 0xFF, 0,0,0,
-        cameraOrigin.xyz,tmin,rayDir.xyz,tmax,0);
-
-    imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(hitPayload.hitValue, 1.0));
+    vec3 color = vec3(0,0,0);
+    for(int pass = 0; pass < numSamples; pass++){
+        uint seed = tea(gl_LaunchIDEXT.y * gl_LaunchSizeEXT.x + gl_LaunchIDEXT.x, numSamples*frame + pass);
+        vec2 jitter = vec2(rnd(seed), rnd(seed));
+        const vec2 uv = (vec2(gl_LaunchIDEXT.xy) + jitter) / gl_LaunchSizeEXT.xy;
+        vec2 uvDir = uv*2.0 - 1.0;
+        vec4 cameraOrigin = camera.mat*vec4(0,0,0,1);
+        vec4 lensInter = proj.mat*vec4(uvDir.x,uvDir.y,1,1);
+        vec4 rayDir = camera.mat*vec4(normalize(lensInter.xyz),0);
+        traceRayEXT(topLevelAS, rayFlags, 0xFF, 0,0,0,
+            cameraOrigin.xyz,tmin,rayDir.xyz,tmax,0);
+        color += hitPayload.hitValue;
+    }
+    color /= numSamples;
+    imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));
 }

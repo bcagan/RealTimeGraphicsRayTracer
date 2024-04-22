@@ -328,6 +328,7 @@ int Mode::modeMain() {
 		rtSystem.poolSize = poolSize;
 		rtSystem.platform = platform;
 		rtSystem.defaultShadowTex = defaultShadow;
+		rtSystem.numSamples = numSamples;
 
 		std::chrono::high_resolution_clock::time_point initFirst = std::chrono::high_resolution_clock::now();
 		rtSystem.initVulkan(drawList, cameraName);

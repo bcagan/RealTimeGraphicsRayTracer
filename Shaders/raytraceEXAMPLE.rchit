@@ -14,6 +14,11 @@ struct HitPayload
   vec3 hitValue;
 };
 
+layout(push_constant) uniform PushConstant { 
+	int frame;
+	int numSamples;	
+};
+
 struct Vertex{
 	float inPositionX;
 	float inPositionY;

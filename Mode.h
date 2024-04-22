@@ -36,6 +36,7 @@ public:
 	bool culling = true;
 	int poolSize = MAX_POOL;
 	bool animate = true;
+	int numSamples = 1;
 	std::string sceneName;
 	std::string cameraName;
 	std::string deviceName;

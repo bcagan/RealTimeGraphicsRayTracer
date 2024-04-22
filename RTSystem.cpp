@@ -2499,6 +2499,7 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 	pushConstHDR.camPosZ = cameraPos.z;
 	pushConstHDR.pbrP = 3;
 	pushConstantRT.frame = frame;
+	pushConstantRT.numSamples = numSamples;
 	frame++;
 	
 	for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {

@@ -72,6 +72,8 @@ public:
 	std::vector<Driver> cameraDrivers;
 	//Cameras
 	std::vector<DrawCamera> cameras;
+	//RT
+	int numSamples;
 private:
 	//init
 	void createInstance(bool verbose = true);
@@ -295,6 +297,7 @@ private:
 	struct PushConstantRay
 	{
 		int frame;
+		int numSamples;
 	};
 	int frame = 0;
 	PushConstantRay pushConstantRT;

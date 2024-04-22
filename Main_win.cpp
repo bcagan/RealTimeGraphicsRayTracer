@@ -54,6 +54,7 @@ int main(int argc, char* argv[])
 	int headlessArg = 0;
 	int shaderArg = 0;
 	int poolArg = 0;
+	int samplesArg = 0;
 	bool instancing = false;
 	bool verbose = false;
 	bool culling = false;
@@ -88,6 +89,9 @@ int main(int argc, char* argv[])
 			}
 			else if (std::string(argv[arg]).compare("--pool-size") == 0) {
 				poolArg = arg + 1;
+			}
+			else if (std::string(argv[arg]).compare("--samples") == 0) {
+				samplesArg = arg + 1;
 			}
 		}
 		else if (std::string(argv[arg]).compare("--list-physical-devices") == 0) {
@@ -139,6 +143,11 @@ int main(int argc, char* argv[])
 	if (cameraArg != 0) {
 		cameraName = std::string(argv[cameraArg]);
 	}
+	//Samples: Optional
+	int numSamples = 1;
+	if (samplesArg != 0) {
+		numSamples = atoi(argv[samplesArg]);
+	}
 	//Physical device name: Required
 	std::string physicalDeviceName = "";
 	if (physicalDeviceArg == 0) {
@@ -185,6 +194,7 @@ int main(int argc, char* argv[])
 	graphMode.animate = animate;
 	//RT: optional
 	graphMode.useRT = RT;
+	graphMode.numSamples = numSamples;
 
 	//Create windows and graph modes
 	HRESULT hResult = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
