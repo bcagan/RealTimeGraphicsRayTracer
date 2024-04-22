@@ -45,14 +45,14 @@ std::pair<float_3, float> DrawNode::produceBoundingSphere(std::vector<Vertex> ve
 	std::pair<float,float> yDomain = std::make_pair(INFINITY, -INFINITY);
 	std::pair<float,float> zDomain = std::make_pair(INFINITY, -INFINITY);
 	for (Vertex vert : vertices) {
-		if (vert.pos.x < xDomain.first) xDomain.first = vert.pos.x;
-		if (vert.pos.y < yDomain.first) yDomain.first = vert.pos.y;
-		if (vert.pos.z < zDomain.first) zDomain.first = vert.pos.z;
+		if (vert.posX < xDomain.first) xDomain.first = vert.posX;
+		if (vert.posY < yDomain.first) yDomain.first = vert.posY;
+		if (vert.posZ < zDomain.first) zDomain.first = vert.posZ;
 	}
 	for (Vertex vert : vertices) {
-		if (vert.pos.x > xDomain.second) xDomain.second = vert.pos.x;
-		if (vert.pos.y > yDomain.second) yDomain.second = vert.pos.y;
-		if (vert.pos.z > zDomain.second) zDomain.second = vert.pos.z;
+		if (vert.posX > xDomain.second) xDomain.second = vert.posX;
+		if (vert.posY > yDomain.second) yDomain.second = vert.posY;
+		if (vert.posZ > zDomain.second) zDomain.second = vert.posZ;
 	}
 	float_3 center = float_3(
 		xDomain.first + (xDomain.second - xDomain.first) / 2.0,
@@ -62,7 +62,7 @@ std::pair<float_3, float> DrawNode::produceBoundingSphere(std::vector<Vertex> ve
 	//Find radius
 	float radius = 0;
 	for (Vertex vert : vertices) {
-		float_3 distVec = vert.pos - center;
+		float_3 distVec = float_3(vert.posX,vert.posY,vert.posZ) - center;
 		float dist = distVec.norm();
 		if (dist > radius) radius = dist;
 	}
@@ -230,11 +230,20 @@ void SceneGraph::recurseSceneGraph(
 			std::vector<SceneVertex> meshSceneVertices(vertexPool.begin() + mesh.vertexOffset, vertexPool.begin() + mesh.vertexOffset + draw.count);
 			std::vector<Vertex> meshVertices(meshSceneVertices.size());
 			for (size_t vert = 0; vert < meshSceneVertices.size(); vert++) {
-				meshVertices[vert].color = meshSceneVertices[vert].color;
-				meshVertices[vert].pos = meshSceneVertices[vert].pos;
-				meshVertices[vert].normal = meshSceneVertices[vert].normal;
-				meshVertices[vert].tangent = meshSceneVertices[vert].tangent;
-				meshVertices[vert].texcoord = meshSceneVertices[vert].texcoord;
+				meshVertices[vert].colorR = meshSceneVertices[vert].color.x;
+				meshVertices[vert].colorG = meshSceneVertices[vert].color.y;
+				meshVertices[vert].colorB = meshSceneVertices[vert].color.z;
+				meshVertices[vert].posX = meshSceneVertices[vert].pos.x;
+				meshVertices[vert].posY = meshSceneVertices[vert].pos.y;
+				meshVertices[vert].posZ = meshSceneVertices[vert].pos.z;
+				meshVertices[vert].normalX = meshSceneVertices[vert].normal.x;
+				meshVertices[vert].normalY = meshSceneVertices[vert].normal.y;
+				meshVertices[vert].normalZ = meshSceneVertices[vert].normal.z;
+				meshVertices[vert].tangentX = meshSceneVertices[vert].tangent.x;
+				meshVertices[vert].tangentY = meshSceneVertices[vert].tangent.y;
+				meshVertices[vert].tangentZ = meshSceneVertices[vert].tangent.z;
+				meshVertices[vert].texcoordU = meshSceneVertices[vert].texcoord.x;
+				meshVertices[vert].texcoordV = meshSceneVertices[vert].texcoord.y;
 				meshVertices[vert].node = drawNode;
 			}
 			vertices.reserve(vertices.size() + meshVertices.size());
@@ -479,9 +488,21 @@ DrawList SceneGraph::navigateSceneGraph(bool verbose, int poolSize) {
 			std::vector<SceneVertex> meshSceneVertices(vertexPool.begin() + mesh.vertexOffset, vertexPool.begin() + mesh.vertexOffset + mesh.count);
 			std::vector<Vertex> meshVertices(meshSceneVertices.size());
 			for (size_t vert = 0; vert < meshSceneVertices.size(); vert++) {
-				meshVertices[vert].color = meshSceneVertices[vert].color;
-				meshVertices[vert].pos = meshSceneVertices[vert].pos;
-				meshVertices[vert].normal = meshSceneVertices[vert].normal;
+				meshVertices[vert].colorR = meshSceneVertices[vert].color.x;
+				meshVertices[vert].colorG = meshSceneVertices[vert].color.y;
+				meshVertices[vert].colorB = meshSceneVertices[vert].color.z;
+				meshVertices[vert].posX = meshSceneVertices[vert].pos.x;
+				meshVertices[vert].posY = meshSceneVertices[vert].pos.y;
+				meshVertices[vert].posZ = meshSceneVertices[vert].pos.z;
+				meshVertices[vert].normalX = meshSceneVertices[vert].normal.x;
+				meshVertices[vert].normalY = meshSceneVertices[vert].normal.y;
+				meshVertices[vert].normalZ = meshSceneVertices[vert].normal.z;
+				meshVertices[vert].tangentX = meshSceneVertices[vert].tangent.x;
+				meshVertices[vert].tangentY = meshSceneVertices[vert].tangent.y;
+				meshVertices[vert].tangentZ = meshSceneVertices[vert].tangent.z;
+				meshVertices[vert].texcoordU = meshSceneVertices[vert].texcoord.x;
+				meshVertices[vert].texcoordV = meshSceneVertices[vert].texcoord.y;
+				meshVertices[vert].node = ind;
 			}
 			meshStartsSizes.push_back(std::make_pair(list.instancedVertexPool.size(), meshVertices.size()));
 			list.instancedVertexPool.reserve(list.instancedIndexPools.size() + meshVertices.size());

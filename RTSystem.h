@@ -270,6 +270,9 @@ private:
 	std::vector< VkBuffer> uniformBuffersProj;
 	std::vector< VkDeviceMemory > uniformBuffersMemoryProj;
 	std::vector< void*> uniformBuffersMappedProj;
+	//Storage
+	VkBuffer materialBuffer;
+	VkDeviceMemory materialBufferMemorys;
 
 	VkDescriptorPool descriptorPoolHDR;
 	std::vector<VkDescriptorSet> descriptorSetsHDR;

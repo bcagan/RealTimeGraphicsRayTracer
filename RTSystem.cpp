@@ -1183,11 +1183,28 @@ void RTSystem::createDescriptorSetLayout() {
 	indicesBit.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 
-	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding, cameraBinding, persBinding, verticesBit, indicesBit };
+
+	VkDescriptorSetLayoutBinding materialBinding{};
+	materialBinding.binding = 6;
+	materialBinding.descriptorCount = 1;
+	materialBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	materialBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+	VkDescriptorSetLayoutBinding textureBinding{};
+	textureBinding.binding = 7;
+	textureBinding.descriptorCount = rawTextures.size();
+	textureBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	textureBinding.pImmutableSamplers = nullptr;
+	textureBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+
+	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding, 
+		cameraBinding, persBinding, verticesBit, indicesBit, materialBinding, 
+		textureBinding };
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 6;
+	layoutInfo.bindingCount = 8;
 	layoutInfo.pBindings = bindings;
 	if (vkCreateDescriptorSetLayout(
 		device, &layoutInfo, nullptr, &descriptorSetLayouts[0]) != VK_SUCCESS) {
@@ -1642,7 +1659,8 @@ void RTSystem::createVertexBuffer(bool realloc) {
 		useVertexBuffer = true;
 
 		//Create temp staging buffer
-		VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+		size_t vertSize = sizeof(vertices[0]);
+		VkDeviceSize bufferSize = vertSize * vertices.size();
 		VkBuffer stagingBuffer{};
 		VkDeviceMemory stagingBufferMemory{};
 		createBuffer(bufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingBits,
@@ -2157,6 +2175,27 @@ void RTSystem::createUniformBuffers(bool realloc) {
 		vkMapMemory(device, uniformBuffersMemoryProj[frame], 0, bufferSizeCameras, 0,
 			&uniformBuffersMappedProj[frame]);
 	}
+
+	//Storage buffers
+
+	size_t matSize = meshMaterials.size() * sizeof(DrawMaterial);
+	int usageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+		VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	int propertyBits = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+	VkBuffer stagingBuffer{};
+	VkDeviceMemory stagingBufferMemory{};
+	createBuffer(matSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, propertyBits,
+		stagingBuffer, stagingBufferMemory, true);
+	void* data;
+	vkMapMemory(device, stagingBufferMemory, 0, matSize, 0, &data);
+	memcpy(data, meshMaterials.data(), (size_t)matSize);
+	vkUnmapMemory(device, stagingBufferMemory);
+	createBuffer(matSize, usageBits, propertyBits,
+		materialBuffer, materialBufferMemorys, realloc);
+	copyBuffer(stagingBuffer, materialBuffer, matSize);
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+	vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
 
 void RTSystem::createDescriptorPool() {
@@ -2237,19 +2276,22 @@ void RTSystem::createDescriptorSets() {
 		bufferInfoPers.offset = 0;
 		bufferInfoPers.range = sizeof(mat44<float>);
 
-		size_t VertSize = sizeof(Vertex);
 		VkDescriptorBufferInfo bufferInfoVertices{};
 		bufferInfoVertices.buffer = vertexBuffer;
 		bufferInfoVertices.offset = 0;
-		bufferInfoVertices.range =VertSize*vertices.size();
-
+		bufferInfoVertices.range = sizeof(Vertex) *vertices.size();
 
 		VkDescriptorBufferInfo bufferInfoIndices{};
 		bufferInfoIndices.buffer = indexAddressBuffer;
 		bufferInfoIndices.offset = 0;
-		bufferInfoIndices.range = sizeof(uint64_t) * meshIndexBufferAddresses.size();;
+		bufferInfoIndices.range = sizeof(uint64_t) * meshIndexBufferAddresses.size();
 
-		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(6);
+		VkDescriptorBufferInfo bufferInfoMaterials{};
+		bufferInfoMaterials.buffer = materialBuffer;
+		bufferInfoMaterials.offset = 0;
+		bufferInfoMaterials.range = sizeof(DrawMaterial) * meshMaterials.size();
+
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(7 + rawTextures.size());
 		writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writeDescriptorSets[0].dstSet = descriptorSetsHDR[frame];
 		writeDescriptorSets[0].pNext = &tlasDescriptor;
@@ -2292,6 +2334,27 @@ void RTSystem::createDescriptorSets() {
 		writeDescriptorSets[5].dstBinding = 5;
 		writeDescriptorSets[5].pBufferInfo = &bufferInfoIndices;
 		writeDescriptorSets[5].dstArrayElement = 0;
+		writeDescriptorSets[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[6].dstSet = descriptorSetsHDR[frame];
+		writeDescriptorSets[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		writeDescriptorSets[6].descriptorCount = 1;
+		writeDescriptorSets[6].dstBinding = 6;
+		writeDescriptorSets[6].pBufferInfo = &bufferInfoMaterials;
+		writeDescriptorSets[6].dstArrayElement = 0;
+		std::vector<VkDescriptorImageInfo> imageInfosTex = std::vector<VkDescriptorImageInfo>(rawTextures.size());
+		for (size_t tex = 0; tex < rawTextures.size(); tex++) {
+			size_t descSet = tex + 7;
+			imageInfosTex[tex].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfosTex[tex].imageView = textureImageViews[tex];
+			imageInfosTex[tex].sampler = textureSamplers[tex];
+			writeDescriptorSets[descSet].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			writeDescriptorSets[descSet].dstSet = descriptorSetsHDR[frame];
+			writeDescriptorSets[descSet].dstBinding = 7;
+			writeDescriptorSets[descSet].dstArrayElement = tex;
+			writeDescriptorSets[descSet].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			writeDescriptorSets[descSet].descriptorCount = 1;
+			writeDescriptorSets[descSet].pImageInfo = &imageInfosTex[tex];
+		}
 		
 		vkUpdateDescriptorSets(device, writeDescriptorSets.size(), writeDescriptorSets.data(), 0, nullptr);
 

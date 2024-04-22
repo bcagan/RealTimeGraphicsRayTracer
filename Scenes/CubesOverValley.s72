@@ -509,10 +509,8 @@
 },
 {
 	"type":"MATERIAL",
-	"name":"lambertian material",
-	"lambertian": {
-		"albedo": [1, 1, 1],
-	},
+	"name":"mirror material",
+	"mirror": {},
 },
 {
 	"type":"MATERIAL",
