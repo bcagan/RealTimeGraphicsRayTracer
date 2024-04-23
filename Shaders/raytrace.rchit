@@ -100,7 +100,7 @@ void main()
 	hitPayload.hitValue = color;
 	hitPayload.wasReflect = false;
 	if(material.type == 3){ //Reflective
-		hitPayload.reflectFactor = 0.75;
+		hitPayload.reflectFactor = 0.95;
 		hitPayload.wasReflect = true;
 	}
 	else if(material.type == 2) { //Lambertian

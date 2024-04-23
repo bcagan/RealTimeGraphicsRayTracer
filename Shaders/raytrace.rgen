@@ -63,7 +63,7 @@ void main()
                 traceRayEXT(topLevelAS, rayFlags, 0xFF, 0,0,0,
                 hitPoint,tmin,refDir,tmax,0);
             
-                initialColor = vec3(reflectFactor) * hitPayload.hitValue +
+                initialColor = vec3(reflectFactor) * hitPayload.hitValue * initialColor +
                 vec3(1.0 - reflectFactor) * initialColor;
                 reflectFactor = hitPayload.reflectFactor;
                 wasReflected = hitPayload.wasReflect;
