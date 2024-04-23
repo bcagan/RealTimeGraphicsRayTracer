@@ -135,11 +135,11 @@ void main()
 	hitPayload.wasReflect = false;
 	hitPayload.wasRetro = false;
 	if(material.type == 3){ //Reflective
-		hitPayload.reflectFactor = 0.95;
+		hitPayload.reflectFactor = 0.6667;
 		hitPayload.wasReflect = true;
 	}
 	else if(material.type == 4){ //"Environment" Retro-reflective
-		hitPayload.reflectFactor = 0.95;
+		hitPayload.reflectFactor = 0.6667;
 		hitPayload.wasRetro = true;
 	}
 	else if(material.type == 2) { //Lambertian
