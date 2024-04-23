@@ -55,6 +55,7 @@ int main(int argc, char* argv[])
 	int shaderArg = 0;
 	int poolArg = 0;
 	int samplesArg = 0;
+	int bouncesArg = 0;
 	bool instancing = false;
 	bool verbose = false;
 	bool culling = false;
@@ -93,6 +94,9 @@ int main(int argc, char* argv[])
 			}
 			else if (std::string(argv[arg]).compare("--samples") == 0) {
 				samplesArg = arg + 1;
+			}
+			else if (std::string(argv[arg]).compare("--bounces") == 0) {
+				bouncesArg = arg + 1;
 			}
 		}
 		else if (std::string(argv[arg]).compare("--list-physical-devices") == 0) {
@@ -153,6 +157,11 @@ int main(int argc, char* argv[])
 	if (samplesArg != 0) {
 		numSamples = atoi(argv[samplesArg]);
 	}
+	//Bounces: Optional
+	int numBounces = 1;
+	if (bouncesArg != 0) {
+		numBounces = atoi(argv[bouncesArg]);
+	}
 	//Physical device name: Required
 	std::string physicalDeviceName = "";
 	if (physicalDeviceArg == 0) {
@@ -201,6 +210,7 @@ int main(int argc, char* argv[])
 	graphMode.useRT = RT;
 	graphMode.numSamples = numSamples;
 	graphMode.doReflect = reflect;
+	graphMode.numBounces = numBounces;
 
 	//Create windows and graph modes
 	HRESULT hResult = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);

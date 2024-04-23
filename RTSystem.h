@@ -73,7 +73,8 @@ public:
 	//Cameras
 	std::vector<DrawCamera> cameras;
 	//RT
-	int numSamples;
+	int numSamples = 1;
+	int numBounces = 1;
 	int doReflect = 0;
 private:
 	//init
@@ -303,6 +304,7 @@ private:
 		int frame;
 		int doReflect;
 		int numSamples;
+		int numBounces;
 	};
 	int frame = 0;
 	PushConstantRay pushConstantRT;

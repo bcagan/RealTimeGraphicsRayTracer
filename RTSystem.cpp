@@ -111,7 +111,7 @@ void RTSystem::initVulkan(DrawList drawList, std::string cameraName) {
 			}
 		}
 		for (int i = 0; i < imageCount; i++) {
-			transitionImageLayout(rtImages[i], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, 1);
+			transitionImageLayout(rtImages[i], VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, 1);
 		}
 	}
 
@@ -2564,6 +2564,7 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 	pushConstantRT.frame = frame;
 	pushConstantRT.doReflect = doReflect;
 	pushConstantRT.numSamples = numSamples;
+	pushConstantRT.numBounces = numBounces;
 	frame++;
 	
 	for (size_t frame = 0; frame < MAX_FRAMES_IN_FLIGHT; frame++) {
@@ -2614,7 +2615,7 @@ void RTSystem::drawFrame() {
 
 
 	vkResetCommandBuffer(commandBuffers[currentFrame], 0);
-	transitionImageLayout(rtImages[currentFrame], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1);
+	transitionImageLayout(rtImages[currentFrame], VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_GENERAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1);
 	recordCommandBufferMain(commandBuffers[currentFrame], imageIndex);
 
 	if (renderToWindow) {
@@ -2676,7 +2677,7 @@ void RTSystem::drawFrame() {
 		headlessFrames++;
 		std::cout << "Frames rendered: " << headlessFrames << std::endl;
 	}
-	transitionImageLayout(rtImages[currentFrame], VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, 1, 1);
+	transitionImageLayout(rtImages[currentFrame], VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_GENERAL, 1, 1);
 }
 
 

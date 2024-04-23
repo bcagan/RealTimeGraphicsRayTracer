@@ -8,6 +8,7 @@ struct HitPayload
 {
   vec3 hitValue;
   float reflectFactor;
+  bool wasReflect;
   vec3 normal;
   vec3 hitPoint;
 };
@@ -19,7 +20,8 @@ layout(location = 0) rayPayloadEXT HitPayload hitPayload;
 layout(push_constant) uniform PushConstant { 
 	int frame;
     int doReflect;
-	int numSamples;	
+	int numSamples;
+    int numBounces;
 };
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
@@ -49,18 +51,29 @@ void main()
         traceRayEXT(topLevelAS, rayFlags, 0xFF, 0,0,0,
             cameraOrigin.xyz,tmin,rayDir.xyz,tmax,0);
         float reflectFactor = hitPayload.reflectFactor;
-        if(doReflect * reflectFactor > 0){
-            vec3 refDir = reflect(-rayDir.xyz,hitPayload.normal);
-            vec3 hitPoint = hitPayload.hitPoint + 0.001 * refDir;
+        bool wasReflected = hitPayload.wasReflect;
+        vec3 thisColor = vec3(0);
+        if(doReflect > 0){
             vec3 initialColor = hitPayload.hitValue;
-            traceRayEXT(topLevelAS, rayFlags, 0xFF, 0,0,0,
-            hitPoint,tmin,refDir,tmax,0);
-            color += reflectFactor * hitPayload.hitValue + 
-                (1 - reflectFactor) * initialColor;
+            for(int bounce = 0; 
+            bounce < numBounces && wasReflected && reflectFactor <= 1.0;
+            bounce++){
+                vec3 refDir = reflect(-rayDir.xyz,hitPayload.normal);
+                vec3 hitPoint = hitPayload.hitPoint + 0.001 * refDir;
+                traceRayEXT(topLevelAS, rayFlags, 0xFF, 0,0,0,
+                hitPoint,tmin,refDir,tmax,0);
+            
+                initialColor = vec3(reflectFactor) * hitPayload.hitValue +
+                vec3(1.0 - reflectFactor) * initialColor;
+                reflectFactor = hitPayload.reflectFactor;
+                wasReflected = hitPayload.wasReflect;
+            }
+            thisColor = initialColor;
         }
         else{
-            color += hitPayload.hitValue;
+            thisColor = hitPayload.hitValue;
         }
+        color += thisColor;
     }
     color /= numSamples;
     imageStore(image, ivec2(gl_LaunchIDEXT.xy), vec4(color, 1.0));

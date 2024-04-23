@@ -13,14 +13,9 @@ struct HitPayload
 {
   vec3 hitValue;
   float reflectFactor;
+  bool wasReflect;
   vec3 normal;
   vec3 hitPoint;
-};
-
-layout(push_constant) uniform PushConstant { 
-	int frame;
-    int doReflect;
-	int numSamples;	
 };
 
 struct Vertex{
@@ -103,8 +98,10 @@ void main()
 	vec2 texcoord = b0*texcoord0 + b1*texcoord1 + b2*texcoord2;
 	Material material = materials.arr[v0.inNode];
 	hitPayload.hitValue = color;
+	hitPayload.wasReflect = false;
 	if(material.type == 3){ //Reflective
-		hitPayload.reflectFactor = 1;
+		hitPayload.reflectFactor = 0.75;
+		hitPayload.wasReflect = true;
 	}
 	else if(material.type == 2) { //Lambertian
 	
@@ -115,7 +112,7 @@ void main()
 		else{
 			albedo = texture(textures[material.albedoTexture], texcoord).rgb;
 		}
-		hitPayload.hitValue = albedo * color * vec3(1,0.9,0.8)*0.75;
+		hitPayload.hitValue = albedo * color * vec3(1,0.9,0.9)*7;
 	    hitPayload.reflectFactor = 0;
 	}
 	else{
