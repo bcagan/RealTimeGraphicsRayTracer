@@ -8,6 +8,7 @@ struct HitPayload
   vec3 hitValue;
   float reflectFactor;
   bool wasReflect;
+  bool wasRetro;
   vec3 normal;
   vec3 hitPoint;
 };

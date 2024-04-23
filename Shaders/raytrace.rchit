@@ -14,6 +14,7 @@ struct HitPayload
   vec3 hitValue;
   float reflectFactor;
   bool wasReflect;
+  bool wasRetro;
   vec3 normal;
   vec3 hitPoint;
 };
@@ -132,9 +133,14 @@ void main()
 	Material material = materials.arr[v0.inNode];
 	hitPayload.hitValue = color;
 	hitPayload.wasReflect = false;
+	hitPayload.wasRetro = false;
 	if(material.type == 3){ //Reflective
 		hitPayload.reflectFactor = 0.95;
 		hitPayload.wasReflect = true;
+	}
+	else if(material.type == 4){ //"Environment" Retro-reflective
+		hitPayload.reflectFactor = 0.95;
+		hitPayload.wasRetro = true;
 	}
 	else if(material.type == 2) { //Lambertian
 		vec3 directLight = vec3(0,0,0);
