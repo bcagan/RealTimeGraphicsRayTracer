@@ -60,12 +60,45 @@ struct Material {
 };
 
 
+layout(push_constant) uniform PushConstant { 
+	int frame;
+    int doReflect;
+	int numSamples;
+    int numBounces;
+    int lightNum;
+	float cameraPosX;
+	float cameraPosY;
+	float cameraPosZ;
+};
+
+
+struct Light {
+
+	int type;
+	// 0 none, 1 sphere, 2 sun, 3 spot
+	float tintR;
+	float tintG;
+	float tintB;
+	float angle;
+	float strength;
+	float radius;
+	float power;
+	float limit;
+	float fov;
+	float blend;
+	int shadowRes;
+};
+
+
+
 layout(location = 0) rayPayloadInEXT HitPayload hitPayload;
 layout(buffer_reference, scalar) buffer Indices {ivec3 arr[]; };
 layout(set = 0, binding = 4, scalar) buffer VertexBuf { Vertex arr[]; } vertices;
 layout(set = 0, binding = 5, scalar) buffer IndexBufferAddresses {uint64_t arr[];} indexAddresses;
 layout(set = 0, binding = 6, scalar) buffer MaterialArray {Material arr[];} materials;
 layout(set = 0, binding = 7) uniform sampler2D textures[100];
+layout(set = 0, binding = 8, scalar) buffer LightTransforms {mat4 arr[];} lightTransforms;
+layout(set = 0, binding = 9, scalar) buffer LightArray {Light arr[];} lights;
 
 void main()
 {

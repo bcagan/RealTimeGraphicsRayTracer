@@ -177,15 +177,6 @@ private:
 
 
 
-	struct PushConst {
-		int numLights;
-		float camPosX;
-		float camPosY;
-		float camPosZ;
-		float pbrP;
-	};
-	PushConst pushConstHDR;
-
 
 	//Vulkan data
 	VkInstance instance;
@@ -273,7 +264,11 @@ private:
 	std::vector< void*> uniformBuffersMappedProj;
 	//Storage
 	VkBuffer materialBuffer;
-	VkDeviceMemory materialBufferMemorys;
+	VkDeviceMemory materialBufferMemory;
+	VkBuffer lightTransformBuffer;
+	VkDeviceMemory lightTransformBufferMemory;
+	VkBuffer lightBuffer;
+	VkDeviceMemory lightBufferMemory;
 
 	VkDescriptorPool descriptorPoolHDR;
 	std::vector<VkDescriptorSet> descriptorSetsHDR;
@@ -305,6 +300,10 @@ private:
 		int doReflect;
 		int numSamples;
 		int numBounces;
+		int numLights;
+		float camPosX;
+		float camPosY;
+		float camPosZ;
 	};
 	int frame = 0;
 	PushConstantRay pushConstantRT;

@@ -22,6 +22,10 @@ layout(push_constant) uniform PushConstant {
     int doReflect;
 	int numSamples;
     int numBounces;
+    int lightNum;
+	float cameraPosX;
+	float cameraPosY;
+	float cameraPosZ;
 };
 
 layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;

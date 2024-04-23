@@ -1198,13 +1198,27 @@ void RTSystem::createDescriptorSetLayout() {
 	textureBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
 
+	VkDescriptorSetLayoutBinding lightTransformBinding{};
+	lightTransformBinding.binding = 8;
+	lightTransformBinding.descriptorCount = 1;
+	lightTransformBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	lightTransformBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+
+	VkDescriptorSetLayoutBinding lightBinding{};
+	lightBinding.binding = 9;
+	lightBinding.descriptorCount = 1;
+	lightBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	lightBinding.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+
 	VkDescriptorSetLayoutBinding bindings[] = {tlasBinding, outImageBinding, 
 		cameraBinding, persBinding, verticesBit, indicesBit, materialBinding, 
-		textureBinding };
+		textureBinding, lightTransformBinding,lightBinding };
 
 	VkDescriptorSetLayoutCreateInfo layoutInfo{};
 	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = 8;
+	layoutInfo.bindingCount = 10;
 	layoutInfo.pBindings = bindings;
 	if (vkCreateDescriptorSetLayout(
 		device, &layoutInfo, nullptr, &descriptorSetLayouts[0]) != VK_SUCCESS) {
@@ -2177,7 +2191,6 @@ void RTSystem::createUniformBuffers(bool realloc) {
 	}
 
 	//Storage buffers
-
 	size_t matSize = meshMaterials.size() * sizeof(DrawMaterial);
 	int usageBits = VK_BUFFER_USAGE_TRANSFER_DST_BIT |
 		VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
@@ -2192,8 +2205,36 @@ void RTSystem::createUniformBuffers(bool realloc) {
 	memcpy(data, meshMaterials.data(), (size_t)matSize);
 	vkUnmapMemory(device, stagingBufferMemory);
 	createBuffer(matSize, usageBits, propertyBits,
-		materialBuffer, materialBufferMemorys, realloc);
+		materialBuffer, materialBufferMemory, realloc);
 	copyBuffer(stagingBuffer, materialBuffer, matSize);
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+	vkFreeMemory(device, stagingBufferMemory, nullptr);
+	
+
+
+	size_t lightTransformSize = lightPool.size() * sizeof(mat44<float>);
+	createBuffer(lightTransformSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, propertyBits,
+		stagingBuffer, stagingBufferMemory, true);
+	vkMapMemory(device, stagingBufferMemory, 0, lightTransformSize, 0, &data);
+	memcpy(data, worldTolightPool.data(), (size_t)lightTransformSize);
+	vkUnmapMemory(device, stagingBufferMemory);
+	createBuffer(lightTransformSize, usageBits, propertyBits,
+		lightTransformBuffer, lightTransformBufferMemory, realloc);
+	copyBuffer(stagingBuffer, lightTransformBuffer, lightTransformSize);
+	vkDestroyBuffer(device, stagingBuffer, nullptr);
+	vkFreeMemory(device, stagingBufferMemory, nullptr);
+
+
+
+	size_t lightSize = lightPool.size() * sizeof(DrawLight);
+	createBuffer(lightSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, propertyBits,
+		stagingBuffer, stagingBufferMemory, true);
+	vkMapMemory(device, stagingBufferMemory, 0, lightSize, 0, &data);
+	memcpy(data, lightPool.data(), (size_t)lightSize);
+	vkUnmapMemory(device, stagingBufferMemory);
+	createBuffer(lightSize, usageBits, propertyBits,
+		lightBuffer, lightBufferMemory, realloc);
+	copyBuffer(stagingBuffer, lightBuffer, lightSize);
 	vkDestroyBuffer(device, stagingBuffer, nullptr);
 	vkFreeMemory(device, stagingBufferMemory, nullptr);
 }
@@ -2291,7 +2332,17 @@ void RTSystem::createDescriptorSets() {
 		bufferInfoMaterials.offset = 0;
 		bufferInfoMaterials.range = sizeof(DrawMaterial) * meshMaterials.size();
 
-		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(7 + rawTextures.size());
+		VkDescriptorBufferInfo bufferInfoLightTransforms{};
+		bufferInfoLightTransforms.buffer = lightTransformBuffer;
+		bufferInfoLightTransforms.offset = 0;
+		bufferInfoLightTransforms.range = sizeof(mat44<float>) * lightPool.size();
+
+		VkDescriptorBufferInfo bufferInfoLights{};
+		bufferInfoLights.buffer = lightBuffer;
+		bufferInfoLights.offset = 0;
+		bufferInfoLights.range = sizeof(DrawLight) * lightPool.size();
+
+		std::vector<VkWriteDescriptorSet> writeDescriptorSets = std::vector<VkWriteDescriptorSet>(9 + rawTextures.size());
 		writeDescriptorSets[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		writeDescriptorSets[0].dstSet = descriptorSetsHDR[frame];
 		writeDescriptorSets[0].pNext = &tlasDescriptor;
@@ -2341,9 +2392,23 @@ void RTSystem::createDescriptorSets() {
 		writeDescriptorSets[6].dstBinding = 6;
 		writeDescriptorSets[6].pBufferInfo = &bufferInfoMaterials;
 		writeDescriptorSets[6].dstArrayElement = 0;
+		writeDescriptorSets[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[7].dstSet = descriptorSetsHDR[frame];
+		writeDescriptorSets[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		writeDescriptorSets[7].descriptorCount = 1;
+		writeDescriptorSets[7].dstBinding = 8;
+		writeDescriptorSets[7].pBufferInfo = &bufferInfoLightTransforms;
+		writeDescriptorSets[7].dstArrayElement = 0;
+		writeDescriptorSets[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		writeDescriptorSets[8].dstSet = descriptorSetsHDR[frame];
+		writeDescriptorSets[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		writeDescriptorSets[8].descriptorCount = 1;
+		writeDescriptorSets[8].dstBinding = 9;
+		writeDescriptorSets[8].pBufferInfo = &bufferInfoLights;
+		writeDescriptorSets[8].dstArrayElement = 0;
 		std::vector<VkDescriptorImageInfo> imageInfosTex = std::vector<VkDescriptorImageInfo>(rawTextures.size());
 		for (size_t tex = 0; tex < rawTextures.size(); tex++) {
-			size_t descSet = tex + 7;
+			size_t descSet = tex + 9;
 			imageInfosTex[tex].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			imageInfosTex[tex].imageView = textureImageViews[tex];
 			imageInfosTex[tex].sampler = textureSamplers[tex];
@@ -2556,11 +2621,10 @@ void RTSystem::updateUniformBuffers(uint32_t frame) {
 
 
 	float_3 cameraPos = useMoveVec + cameras[currentCamera].forAnimate.translate;
-	pushConstHDR.numLights = (int)lightPool.size();
-	pushConstHDR.camPosX = cameraPos.x;
-	pushConstHDR.camPosY = cameraPos.y;
-	pushConstHDR.camPosZ = cameraPos.z;
-	pushConstHDR.pbrP = 3;
+	pushConstantRT.numLights = (int)lightPool.size();
+	pushConstantRT.camPosX = cameraPos.x;
+	pushConstantRT.camPosY = cameraPos.y;
+	pushConstantRT.camPosZ = cameraPos.z;
 	pushConstantRT.frame = frame;
 	pushConstantRT.doReflect = doReflect;
 	pushConstantRT.numSamples = numSamples;
