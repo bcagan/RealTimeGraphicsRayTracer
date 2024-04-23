@@ -137,6 +137,47 @@ void main()
 		hitPayload.wasReflect = true;
 	}
 	else if(material.type == 2) { //Lambertian
+		vec3 directLight = vec3(0,0,0);
+		for(int lightInd = 0; lightInd < lightNum; lightInd++){
+			vec3 toLight = -(lightTransforms.arr[lightInd] * vec4(position,1)).xyz;
+			Light light = lights.arr[lightInd];
+			vec3 tint = vec3(light.tintR, light.tintG, light.tintB);
+			float dist = length(toLight);
+			float fallOff;
+			if(light.limit > 0) fallOff = max(0,1 - pow(dist/light.limit,4))/4/3.14159/dist/dist;
+			else fallOff = 1/dist/dist/4/3.14159;
+			vec3 sphereContribution = vec3(light.power)*tint*fallOff;
+
+			if(light.type == 1){
+				float normDot = dot(normal,normalize(toLight));
+				if (normDot < 0) normDot = 0;
+				directLight += normDot * sphereContribution;
+			}
+			else if(light.type == 2){
+				float normDot = dot(normal,vec3(0,0,-1));
+				if (normDot < 0) normDot = 1 + normDot;
+				else normDot = 1;
+				directLight += normDot*light.strength*tint;
+			}
+			else if(light.type == 3){
+				float normDot = dot(normal,vec3(0,0,-1));
+				if (normDot < 0) normDot = 0;
+				float angle = acos(dot(normalize(toLight),vec3(0,0,-1)));
+				float blendLimit = light.fov*(1 - light.blend)/2;
+				float fovLimit = light.fov/2;
+				if(light.limit > dist){
+					if(angle < blendLimit){
+						directLight += normDot*sphereContribution;
+					}
+					else if(angle < fovLimit){
+						float midPoint = angle - blendLimit;
+						float blendFactor = (1- midPoint/(fovLimit - blendLimit));
+						directLight += normDot*vec3(blendFactor) * sphereContribution;
+					}
+				}
+			}
+		}
+
 	
 		vec3 albedo;
 		if(material.useValueAlbedo != 0){
@@ -145,7 +186,7 @@ void main()
 		else{
 			albedo = texture(textures[material.albedoTexture], texcoord).rgb;
 		}
-		hitPayload.hitValue = albedo * color * vec3(1,0.9,0.9)*7;
+		hitPayload.hitValue = directLight* albedo * color;
 	    hitPayload.reflectFactor = 0;
 	}
 	else{
