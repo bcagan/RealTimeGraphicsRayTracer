@@ -8,7 +8,8 @@
 		"POSITION":{ "src":"manycube.Cube.b72", "offset":0, "stride":28, "format":"R32G32B32_SFLOAT" },
 		"NORMAL":{ "src":"manycube.Cube.b72", "offset":12, "stride":28, "format":"R32G32B32_SFLOAT" },
 		"COLOR":{ "src":"manycube.Cube.b72", "offset":24, "stride":28, "format":"R8G8B8A8_UNORM" }
-	}
+	},
+	"material":37
 },
 {
 	"type":"NODE",
@@ -288,5 +289,10 @@
 	"type":"SCENE",
 	"name":"c:\\Users\\Owner\\Downloads\\s72-main\\s72-main\\exporters\\blender\\manycube.blend",
 	"roots":[2, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35]
+},
+{
+	"type":"MATERIAL",
+	"name":"mirror material",
+	"mirror": {},
 }
 ]
