@@ -76,6 +76,8 @@ public:
 	int numSamples = 1;
 	int numBounces = 1;
 	int doReflect = 0;
+	float debugRayTime = 0;
+	bool verbose = false;
 private:
 	//init
 	void createInstance(bool verbose = true);

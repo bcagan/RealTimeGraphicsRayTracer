@@ -782,7 +782,7 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 		VkDeviceAddress indexAddress = getBufferAddress(device, meshIndexBuffers[mesh]);
 		VkDeviceAddress transformAddress = getBufferAddress(device, meshTransformBuffers[mesh]);
 		meshIndexBufferAddresses.push_back(indexAddress);
-		uint32_t maxTriCount = indexPoolsMesh[mesh].size() / 3;
+		uint32_t maxTriCount = indexPoolsMesh[mesh].size()/3;
 
 
 
@@ -882,7 +882,8 @@ void RTSystem::createBLAccelereationStructures(uint32_t flags) {
 			createBLAccelereationStructure(meshIndicies, buildData, scratchAddress, queryPool);
 			if (queryPool) {
 				std::vector<AS> cleanupAs;
-				compactBLAccelereationStructure(meshIndicies, buildData, queryPool, cleanupAs);
+				//Broken, so ignoring
+				//compactBLAccelereationStructure(meshIndicies, buildData, queryPool, cleanupAs);
 				
 
 				//TODO: Destroy cleanupAS!
@@ -2675,7 +2676,16 @@ void RTSystem::drawFrame() {
 
 	vkResetCommandBuffer(commandBuffers[currentFrame], 0);
 
+
+	std::chrono::high_resolution_clock::time_point start =
+		std::chrono::high_resolution_clock::now();
 	raytrace(commandBuffers[currentFrame]);
+	if (verbose) {
+		std::chrono::high_resolution_clock::time_point end =
+			std::chrono::high_resolution_clock::now();
+		debugRayTime += std::chrono::duration_cast<std::chrono::milliseconds>(
+			end - start).count();
+	}
 
 
 	vkResetCommandBuffer(commandBuffers[currentFrame], 0);

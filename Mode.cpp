@@ -260,10 +260,13 @@ void Mode::mainLoop(SceneGraph* graph, bool rt) {
 				end - start).count();
 			framecount++;
 			if (verbose && framecount == 1000) {
+				std::cout << "MEASURE raytime (avg of 1000 frames): " <<
+					(float)rtSystem.debugRayTime / 1000.f << "ms" << std::endl;
 				std::cout << "MEASURE frametime (avg of 1000 frames): " << (float)
 					mscount / 1000.f << "ms" << std::endl;
 				mscount = 0;
 				framecount = 0;
+				rtSystem.debugRayTime = 0;
 			}
 		}
 	}
@@ -331,6 +334,7 @@ int Mode::modeMain() {
 		rtSystem.numSamples = numSamples;
 		rtSystem.numBounces = numBounces;
 		rtSystem.doReflect = doReflect;
+		rtSystem.verbose = verbose;
 
 		std::chrono::high_resolution_clock::time_point initFirst = std::chrono::high_resolution_clock::now();
 		rtSystem.initVulkan(drawList, cameraName);

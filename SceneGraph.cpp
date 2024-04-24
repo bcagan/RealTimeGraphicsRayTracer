@@ -586,7 +586,7 @@ DrawList SceneGraph::navigateSceneGraph(bool verbose, int poolSize) {
 			list.meshBoundingSpheres[mesh] = drawNode.boundingSphere;
 			int minIndex = INT_MAX; int maxIndex = -1;
 			for (int ind = 0; ind < list.meshIndexPools[mesh].size(); ind++) {
-				uint32_t thisIndex = list.meshIndexPools[mesh][ind];
+				int thisIndex = (int)list.meshIndexPools[mesh][ind];
 				if (thisIndex > maxIndex) maxIndex = thisIndex;
 				if (thisIndex < minIndex) minIndex = thisIndex;
 			}
